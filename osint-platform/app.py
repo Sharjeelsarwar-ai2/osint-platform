@@ -1,768 +1,966 @@
-import streamlit as st
-import re
-import time
-from config.settings import GROQ_API_KEY, AGENT_CONFIG, SEVERITY_COLORS
-from agents.orchestrator import run_osint_audit
-from utils.pdf_generator import generate_pdf
+"""
+NEXUS COMMAND — AI OSINT & Threat Intelligence Platform
+Hackathon-grade holographic UI with live multi-agent visualization
+"""
 
-# ── Page Config ──
+import streamlit as st
+import streamlit.components.v1 as components
+import time
+import json
+import re
+from datetime import datetime
+
+# ── Page config MUST be first ──
 st.set_page_config(
-    page_title="OSINT AI — Threat Intelligence Platform",
-    page_icon="🕵️",
+    page_title="NEXUS • OSINT Intelligence",
+    page_icon="🔮",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed",
 )
 
-# ── Embedded CSS ──
-CUSTOM_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+from config.settings import GROQ_API_KEY, AGENT_PROFILES, SEVERITY_COLORS, MODEL_NAME
+from agents.orchestrator import run_osint_audit
 
+# ──────────────────────────────────────────────────────────
+#  NEXUS DESIGN SYSTEM — Complete Embedded CSS
+# ──────────────────────────────────────────────────────────
+NEXUS_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,600;0,700;0,900&family=Space+Grotesk:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap');
+
+/* ── ROOT VARIABLES ── */
 :root {
-    --bg-primary: #0a0e17;
-    --accent-cyan: #00f5d4;
-    --accent-green: #00c896;
-    --accent-purple: #7c3aed;
-    --accent-red: #ff0040;
-    --accent-orange: #ff6b35;
-    --accent-yellow: #ffd700;
-    --text-primary: #e2e8f0;
-    --text-secondary: #94a3b8;
-    --glow-cyan: 0 0 20px rgba(0,245,212,0.3);
-    --glow-purple: 0 0 20px rgba(124,58,237,0.3);
-    --glass-bg: rgba(255,255,255,0.03);
-    --glass-border: rgba(255,255,255,0.08);
+    --nx-bg-primary: #030712;
+    --nx-bg-secondary: #0f1629;
+    --nx-bg-card: #111827;
+    --nx-accent-blue: #3b82f6;
+    --nx-accent-emerald: #10b981;
+    --nx-accent-amber: #f59e0b;
+    --nx-accent-rose: #f43f5e;
+    --nx-accent-violet: #8b5cf6;
+    --nx-accent-cyan: #06b6d4;
+    --nx-text-primary: #f1f5f9;
+    --nx-text-secondary: #94a3b8;
+    --nx-text-muted: #475569;
+    --nx-border: #1e293b;
+    --nx-glow-blue: rgba(59, 130, 246, 0.4);
+    --nx-glow-emerald: rgba(16, 185, 129, 0.4);
 }
 
+/* ── GLOBAL RESET ── */
 .stApp {
-    background: var(--bg-primary) !important;
-    background-image:
-        radial-gradient(ellipse at 10% 20%, rgba(0,245,212,0.03) 0%, transparent 50%),
-        radial-gradient(ellipse at 90% 80%, rgba(124,58,237,0.03) 0%, transparent 50%) !important;
-    font-family: 'Rajdhani', sans-serif !important;
+    background: var(--nx-bg-primary) !important;
+    color: var(--nx-text-primary) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
 }
 
 .stApp::before {
     content: '';
-    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background-image:
-        linear-gradient(rgba(0,245,212,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,245,212,0.03) 1px, transparent 1px);
-    background-size: 50px 50px;
-    animation: gridMove 20s linear infinite;
-    pointer-events: none; z-index: 0;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(16,185,129,0.08), transparent),
+        radial-gradient(ellipse 50% 50% at 10% 50%, rgba(139,92,246,0.06), transparent);
+    pointer-events: none;
+    z-index: 0;
 }
 
-@keyframes gridMove {
+/* ── PARTICLE GRID BACKGROUND ── */
+.stApp::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background-image:
+        linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+    background-size: 50px 50px;
+    pointer-events: none;
+    z-index: 0;
+    animation: gridDrift 20s linear infinite;
+}
+
+@keyframes gridDrift {
     0% { transform: translate(0,0); }
     100% { transform: translate(50px,50px); }
 }
 
+/* ── HIDE STREAMLIT DEFAULTS ── */
+header[data-testid="stHeader"] { display: none !important; }
+#MainMenu { visibility: hidden !important; }
+footer { visibility: hidden !important; }
+div[data-testid="stDecoration"] { display: none !important; }
+.stDeployButton { display: none !important; }
+section[data-testid="stSidebar"] { display: none !important; }
+
+/* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-track { background: var(--nx-bg-primary); }
 ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, var(--accent-cyan), var(--accent-purple));
+    background: linear-gradient(180deg, var(--nx-accent-blue), var(--nx-accent-emerald));
     border-radius: 3px;
 }
 
-.cyber-header { text-align: center; padding: 2rem 0; position: relative; z-index: 1; }
-
-.cyber-header h1 {
-    font-family: 'Orbitron', monospace !important;
-    font-size: 2.8rem !important; font-weight: 900 !important;
-    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green), var(--accent-purple));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text; letter-spacing: 3px;
-    animation: titleGlow 3s ease-in-out infinite alternate;
+/* ── NEXUS HEADER ── */
+.nexus-header {
+    position: relative;
+    text-align: center;
+    padding: 2.5rem 1rem 2rem;
+    margin-bottom: 2rem;
+    overflow: hidden;
 }
 
-@keyframes titleGlow {
-    0% { filter: drop-shadow(0 0 10px rgba(0,245,212,0.3)); }
-    100% { filter: drop-shadow(0 0 25px rgba(124,58,237,0.4)); }
+.nexus-header::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 600px; height: 600px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(59,130,246,0.08), transparent 60%);
+    pointer-events: none;
 }
 
-.cyber-header .subtitle {
-    font-family: 'Rajdhani', sans-serif; font-size: 1.1rem;
-    color: var(--text-secondary); letter-spacing: 5px;
-    text-transform: uppercase; font-weight: 300;
+.nexus-logo {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 3.5rem;
+    font-weight: 900;
+    letter-spacing: 12px;
+    background: linear-gradient(135deg, #3b82f6, #10b981, #f59e0b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.3rem;
+    position: relative;
+    display: inline-block;
 }
 
-.shield-icon {
-    font-size: 4.5rem; display: block; text-align: center;
-    animation: shieldPulse 2s ease-in-out infinite;
-    filter: drop-shadow(0 0 30px rgba(0,245,212,0.4));
+.nexus-logo::after {
+    content: '';
+    position: absolute;
+    bottom: -4px; left: 10%;
+    width: 80%; height: 2px;
+    background: linear-gradient(90deg, transparent, #3b82f6, #10b981, transparent);
 }
 
-@keyframes shieldPulse {
-    0%,100% { transform: scale(1); }
-    50% { transform: scale(1.08); }
+.nexus-subtitle {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.85rem;
+    color: var(--nx-text-secondary);
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-top: 0.6rem;
 }
 
-.glass-card {
-    background: var(--glass-bg); border: 1px solid var(--glass-border);
-    border-radius: 16px; padding: 1.2rem;
-    backdrop-filter: blur(20px); transition: all 0.4s ease;
-    position: relative; overflow: hidden; margin-bottom: 0.8rem;
+.nexus-version {
+    display: inline-block;
+    margin-top: 0.8rem;
+    padding: 3px 14px;
+    background: rgba(59,130,246,0.1);
+    border: 1px solid rgba(59,130,246,0.25);
+    border-radius: 20px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.65rem;
+    color: var(--nx-accent-blue);
+    letter-spacing: 2px;
 }
 
-.glass-card:hover {
-    transform: translateY(-3px); border-color: rgba(0,245,212,0.3);
-    box-shadow: var(--glow-cyan);
+/* ── METRIC CARDS ── */
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
 }
 
-.agent-card {
-    background: linear-gradient(145deg, rgba(17,24,39,0.9), rgba(30,41,59,0.6));
-    border: 1px solid var(--glass-border); border-radius: 16px;
-    padding: 1.2rem; text-align: center;
-    transition: all 0.5s cubic-bezier(0.175,0.885,0.32,1.275);
-    cursor: default;
+.metric-card {
+    background: linear-gradient(145deg, #111827, #0f1629);
+    border: 1px solid var(--nx-border);
+    border-radius: 16px;
+    padding: 1.2rem;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.agent-card:hover {
-    transform: translateY(-8px) rotateX(3deg);
-    box-shadow: 0 15px 30px rgba(0,0,0,0.3), var(--glow-cyan);
-    border-color: var(--accent-cyan);
+.metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 3px;
+    border-radius: 16px 16px 0 0;
 }
 
-.agent-card .agent-icon {
-    font-size: 2rem; display: block; margin-bottom: 0.3rem;
-    animation: float 3s ease-in-out infinite;
+.metric-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(59,130,246,0.4);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4), 0 0 30px rgba(59,130,246,0.1);
 }
 
-@keyframes float {
-    0%,100% { transform: translateY(0); }
-    50% { transform: translateY(-6px); }
+.metric-card .mc-icon {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
 }
 
-.agent-card .agent-name {
-    font-family: 'Orbitron', monospace; font-size: 0.7rem;
-    font-weight: 700; color: var(--accent-cyan); letter-spacing: 1px;
+.metric-card .mc-value {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: var(--nx-text-primary);
+    line-height: 1;
 }
 
-.agent-card .agent-desc {
-    font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3;
+.metric-card .mc-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.72rem;
+    color: var(--nx-text-secondary);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 0.3rem;
 }
 
-.stTextArea textarea {
-    background: rgba(17,24,39,0.8) !important;
-    border: 1px solid rgba(0,245,212,0.2) !important;
-    border-radius: 12px !important; color: var(--text-primary) !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 1rem !important; padding: 1rem !important;
+/* ── NEXUS CARD (glass) ── */
+.nx-card {
+    background: linear-gradient(160deg, rgba(17,24,39,0.9), rgba(15,22,41,0.7));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--nx-border);
+    border-radius: 20px;
+    padding: 1.8rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.4s ease;
 }
 
-.stTextArea textarea:focus {
-    border-color: var(--accent-cyan) !important;
-    box-shadow: 0 0 0 2px rgba(0,245,212,0.1), var(--glow-cyan) !important;
+.nx-card:hover {
+    border-color: rgba(59,130,246,0.3);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 0 60px rgba(59,130,246,0.02);
 }
 
-.stButton > button {
-    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-green)) !important;
-    color: #0a0e17 !important; font-family: 'Orbitron', monospace !important;
-    font-weight: 700 !important; font-size: 1rem !important;
-    letter-spacing: 2px !important; padding: 0.8rem 2rem !important;
-    border: none !important; border-radius: 12px !important;
-    transition: all 0.4s ease !important; text-transform: uppercase !important;
+.nx-card-title {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+/* ── INPUT AREA ── */
+.nx-input-wrapper {
+    background: linear-gradient(160deg, rgba(17,24,39,0.95), rgba(15,22,41,0.8));
+    border: 1px solid var(--nx-border);
+    border-radius: 24px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.nx-input-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: linear-gradient(135deg, rgba(59,130,246,0.03), transparent, rgba(16,185,129,0.03));
+    pointer-events: none;
+}
+
+/* ── STREAMLIT INPUT OVERRIDES ── */
+.stTextInput > div > div {
+    background: rgba(15, 22, 41, 0.8) !important;
+    border: 1px solid var(--nx-border) !important;
+    border-radius: 12px !important;
+    color: var(--nx-text-primary) !important;
+    font-family: 'Fira Code', monospace !important;
+    font-size: 1rem !important;
+    padding: 0.6rem 1rem !important;
+    transition: all 0.3s ease !important;
+}
+
+.stTextInput > div > div:focus-within {
+    border-color: var(--nx-accent-blue) !important;
+    box-shadow: 0 0 20px rgba(59,130,246,0.15) !important;
+}
+
+.stTextInput label {
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: var(--nx-text-secondary) !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+}
+
+.stSelectbox > div > div {
+    background: rgba(15, 22, 41, 0.8) !important;
+    border: 1px solid var(--nx-border) !important;
+    border-radius: 12px !important;
+    color: var(--nx-text-primary) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+}
+
+.stSelectbox label {
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: var(--nx-text-secondary) !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+}
+
+/* ── LAUNCH BUTTON ── */
+div.stButton > button {
+    background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+    color: white !important;
+    font-family: 'Exo 2', sans-serif !important;
+    font-size: 1.05rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 4px !important;
+    text-transform: uppercase !important;
+    padding: 0.85rem 3rem !important;
+    border: none !important;
+    border-radius: 14px !important;
+    cursor: pointer !important;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    position: relative !important;
+    overflow: hidden !important;
     width: 100% !important;
 }
 
-.stButton > button:hover {
-    transform: translateY(-3px) scale(1.02) !important;
-    box-shadow: 0 10px 30px rgba(0,245,212,0.3), var(--glow-cyan) !important;
+div.stButton > button:hover {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 12px 35px rgba(59,130,246,0.35) !important;
 }
 
-.risk-score-container {
-    display: flex; justify-content: center; align-items: center; margin: 1.5rem 0;
+div.stButton > button:active {
+    transform: translateY(0px) !important;
 }
 
-.risk-score-circle {
-    width: 160px; height: 160px; border-radius: 50%;
-    display: flex; flex-direction: column;
-    justify-content: center; align-items: center;
-    animation: scoreAppear 1s ease-out;
+/* ── EXPANDER OVERRIDES ── */
+.streamlit-expanderHeader {
+    background: var(--nx-bg-card) !important;
+    border: 1px solid var(--nx-border) !important;
+    border-radius: 12px !important;
+    color: var(--nx-text-primary) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 600 !important;
+    letter-spacing: 1px !important;
 }
 
-.risk-score-circle.critical {
-    background: conic-gradient(#ff0040 var(--pct), rgba(255,255,255,0.05) 0);
-    box-shadow: 0 0 40px rgba(255,0,64,0.3);
-}
-.risk-score-circle.high {
-    background: conic-gradient(#ff6b35 var(--pct), rgba(255,255,255,0.05) 0);
-    box-shadow: 0 0 40px rgba(255,107,53,0.3);
-}
-.risk-score-circle.medium {
-    background: conic-gradient(#ffd700 var(--pct), rgba(255,255,255,0.05) 0);
-    box-shadow: 0 0 40px rgba(255,215,0,0.3);
-}
-.risk-score-circle.low {
-    background: conic-gradient(#00f5d4 var(--pct), rgba(255,255,255,0.05) 0);
-    box-shadow: 0 0 40px rgba(0,245,212,0.3);
+.streamlit-expanderContent {
+    background: var(--nx-bg-secondary) !important;
+    border: 1px solid var(--nx-border) !important;
+    border-top: none !important;
+    border-radius: 0 0 12px 12px !important;
 }
 
-.risk-score-inner {
-    width: 125px; height: 125px; border-radius: 50%;
-    background: var(--bg-primary);
-    display: flex; flex-direction: column;
-    justify-content: center; align-items: center;
-}
-
-.risk-score-value {
-    font-family: 'Orbitron', monospace; font-size: 2.2rem; font-weight: 900;
-}
-
-.risk-score-label {
-    font-family: 'Rajdhani', sans-serif; font-size: 0.7rem;
-    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px;
-}
-
-@keyframes scoreAppear {
-    0% { transform: scale(0) rotate(-180deg); opacity: 0; }
-    100% { transform: scale(1) rotate(0deg); opacity: 1; }
-}
-
-.stat-card {
-    background: linear-gradient(145deg, rgba(17,24,39,0.95), rgba(30,41,59,0.7));
-    border: 1px solid var(--glass-border); border-radius: 14px;
-    padding: 1.2rem; text-align: center; transition: all 0.4s ease;
-}
-
-.stat-card:hover {
-    transform: translateY(-4px); box-shadow: var(--glow-cyan);
-    border-color: rgba(0,245,212,0.3);
-}
-
-.stat-card .stat-value {
-    font-family: 'Orbitron', monospace; font-size: 1.8rem; font-weight: 900;
-}
-
-.stat-card .stat-label {
-    font-family: 'Rajdhani', sans-serif; font-size: 0.8rem;
-    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 2px;
-}
-
+/* ── RESULTS TABS ── */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 4px; background: rgba(17,24,39,0.5); border-radius: 12px; padding: 4px;
+    gap: 0.5rem;
+    background: transparent;
+    border-bottom: 1px solid var(--nx-border);
+    padding-bottom: 0;
 }
 
 .stTabs [data-baseweb="tab"] {
-    background: transparent !important; border-radius: 10px !important;
-    color: var(--text-secondary) !important;
-    font-family: 'Orbitron', monospace !important; font-size: 0.65rem !important;
-    letter-spacing: 1px !important; padding: 8px 12px !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 10px 10px 0 0 !important;
+    color: var(--nx-text-muted) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 1.5px !important;
+    padding: 0.7rem 1.4rem !important;
+    transition: all 0.3s ease !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    color: var(--nx-text-primary) !important;
+    background: rgba(59,130,246,0.08) !important;
 }
 
 .stTabs [aria-selected="true"] {
-    background: rgba(0,245,212,0.1) !important;
-    color: var(--accent-cyan) !important;
-    border-bottom: 2px solid var(--accent-cyan) !important;
+    background: rgba(59,130,246,0.12) !important;
+    border-color: var(--nx-border) !important;
+    border-bottom-color: var(--nx-bg-primary) !important;
+    color: var(--nx-accent-blue) !important;
 }
 
-.stTabs [data-baseweb="tab-panel"] {
-    background: var(--glass-bg); border: 1px solid var(--glass-border);
-    border-radius: 0 0 12px 12px; padding: 1.5rem;
+.stTabs [data-baseweb="tab-highlight"] {
+    background-color: var(--nx-accent-blue) !important;
 }
 
-.stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
-    font-family: 'Orbitron', monospace !important; color: var(--accent-cyan) !important;
+/* ── AGENT TEAM GRID ── */
+.agent-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1rem;
+    margin: 1.5rem 0;
 }
 
-.stMarkdown p, .stMarkdown li {
-    color: var(--text-primary) !important;
-    font-family: 'Rajdhani', sans-serif !important;
-    font-size: 1rem !important; line-height: 1.7 !important;
+.agent-mini-card {
+    background: linear-gradient(160deg, #111827, #0f1629);
+    border: 1px solid var(--nx-border);
+    border-radius: 16px;
+    padding: 1.2rem 0.8rem;
+    text-align: center;
+    transition: all 0.4s ease;
+    position: relative;
+    overflow: hidden;
 }
 
-.stMarkdown code {
-    background: rgba(0,245,212,0.1) !important; color: var(--accent-cyan) !important;
-    padding: 2px 8px !important; border-radius: 4px !important;
-    font-family: 'JetBrains Mono', monospace !important;
+.agent-mini-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 100%; height: 3px;
+    border-radius: 0 0 16px 16px;
 }
 
-.stMarkdown th {
-    background: rgba(0,245,212,0.1) !important; color: var(--accent-cyan) !important;
-    font-family: 'Orbitron', monospace !important; font-size: 0.7rem !important;
-    padding: 8px !important; border-bottom: 2px solid rgba(0,245,212,0.3) !important;
+.agent-mini-card:hover {
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.4);
 }
 
-.stMarkdown td {
-    padding: 6px 8px !important; border-bottom: 1px solid var(--glass-border) !important;
-    color: var(--text-primary) !important;
+.agent-mini-card .amc-avatar {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    margin: 0 auto 0.6rem;
+    display: block;
 }
 
-.scanner-line {
-    width: 100%; height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
-    animation: scan 2s ease-in-out infinite; margin: 1rem 0;
+.agent-mini-card .amc-name {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 0.2rem;
 }
 
-@keyframes scan {
-    0% { transform: translateX(-100%); opacity: 0; }
-    50% { opacity: 1; }
-    100% { transform: translateX(100%); opacity: 0; }
+.agent-mini-card .amc-role {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.6rem;
+    color: var(--nx-text-secondary);
+    letter-spacing: 1px;
 }
 
-@keyframes pulse {
-    0%,100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.5); opacity: 0.5; }
+/* ── RISK GAUGE ── */
+.risk-gauge-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
 }
 
-.cyber-divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-purple), transparent);
-    margin: 2rem 0; border: none;
+.risk-gauge {
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.stDownloadButton > button {
-    background: linear-gradient(135deg, var(--accent-purple), #9333ea) !important;
-    color: white !important; font-family: 'Orbitron', monospace !important;
-    font-weight: 700 !important; letter-spacing: 1px !important;
-    border: none !important; border-radius: 12px !important;
-    padding: 0.7rem 2rem !important; width: 100% !important;
+.risk-gauge .rg-score {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 3.2rem;
+    font-weight: 900;
+    position: relative;
+    z-index: 2;
 }
 
-.stDownloadButton > button:hover {
-    transform: translateY(-2px) !important; box-shadow: var(--glow-purple) !important;
+.risk-gauge .rg-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.7rem;
+    color: var(--nx-text-secondary);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    position: absolute;
+    bottom: 45px;
+    z-index: 2;
 }
 
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, rgba(10,14,23,0.98), rgba(17,24,39,0.95)) !important;
-    border-right: 1px solid var(--glass-border) !important;
+/* ── FINDING CARD ── */
+.finding-card {
+    background: linear-gradient(160deg, #111827, #0f1629);
+    border-left: 4px solid;
+    border-radius: 0 12px 12px 0;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+    transition: all 0.3s ease;
 }
 
-.stProgress > div > div > div {
-    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)) !important;
+.finding-card:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 
-.stSpinner > div { border-top-color: var(--accent-cyan) !important; }
-
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-header { visibility: hidden; }
-
-.cyber-footer {
-    text-align: center; padding: 2rem 0; margin-top: 3rem;
-    border-top: 1px solid var(--glass-border);
+.finding-title {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 0.4rem;
 }
 
-.cyber-footer .tech-badge {
-    background: rgba(0,245,212,0.05); border: 1px solid rgba(0,245,212,0.15);
-    border-radius: 20px; padding: 4px 12px;
-    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--accent-cyan);
+.finding-detail {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.82rem;
+    color: var(--nx-text-secondary);
+    line-height: 1.6;
 }
 
+/* ── SEVERITY BADGES ── */
+.severity-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 8px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.severity-critical { background: rgba(244,63,94,0.15); color: #f43f5e; border: 1px solid rgba(244,63,94,0.3); }
+.severity-high     { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+.severity-medium   { background: rgba(59,130,246,0.15); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); }
+.severity-low      { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.severity-info     { background: rgba(148,163,184,0.1); color: #94a3b8; border: 1px solid rgba(148,163,184,0.2); }
+
+/* ── LIVE PULSE DOT ── */
+.pulse-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px #10b981; }
+    50%      { opacity: 0.4; box-shadow: 0 0 12px #10b981; }
+}
+
+/* ── LOADING SHIMMER ── */
+@keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.shimmer-line {
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    margin-bottom: 0.5rem;
+}
+
+/* ── RESPONSIVE ── */
 @media (max-width: 768px) {
-    .cyber-header h1 { font-size: 1.6rem !important; }
-    .risk-score-circle { width: 120px; height: 120px; }
-    .risk-score-inner { width: 95px; height: 95px; }
-    .risk-score-value { font-size: 1.6rem; }
+    .metric-grid { grid-template-columns: repeat(2, 1fr); }
+    .agent-grid { grid-template-columns: repeat(2, 1fr); }
+    .nexus-logo { font-size: 2rem; letter-spacing: 6px; }
 }
 </style>
 """
 
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# ──────────────────────────────────────────────────────────
+#  HELPER: Render Agent Team Showcase (HTML)
+# ──────────────────────────────────────────────────────────
+def render_agent_showcase():
+    """Display the 5-agent team as interactive cards."""
+    cards_html = ""
+    for key, a in AGENT_PROFILES.items():
+        c = a["color"]
+        cards_html += f"""
+        <div class="agent-mini-card" style="border-color:{c}20;"
+             onmouseover="this.style.borderColor='{c}60'"
+             onmouseout="this.style.borderColor='{c}20'">
+            <div style="position:absolute;bottom:0;left:0;width:100%;height:3px;
+                        background:linear-gradient(90deg,transparent,{c},transparent);"></div>
+            <img src="{a['avatar_url']}" class="amc-avatar"
+                 style="border:2px solid {c};box-shadow:0 0 15px {c}30;background:#0f1629;" />
+            <div class="amc-name" style="color:{c};">{a['icon']} {a['name']}</div>
+            <div class="amc-role">{a['role']}</div>
+        </div>
+        """
+
+    st.markdown(f'<div class="agent-grid">{cards_html}</div>', unsafe_allow_html=True)
 
 
-# ── Helper Functions ──
-def extract_risk_score(report: str) -> int:
-    for pattern in [r'Overall Risk Score[:\s]*(\d+)\s*/\s*100', r'Risk Score[:\s]*(\d+)', r'(\d+)\s*/\s*100']:
-        m = re.search(pattern, report, re.IGNORECASE)
-        if m and 0 <= int(m.group(1)) <= 100:
-            return int(m.group(1))
-    return 55
-
-
-def extract_grade(report: str) -> str:
-    for pattern in [r'Security Grade[:\s]*([A-F][+-]?)', r'Grade[:\s]*([A-F][+-]?)']:
-        m = re.search(pattern, report, re.IGNORECASE)
-        if m:
-            return m.group(1).upper()
-    return "B"
-
-
-def get_risk_info(score: int):
-    if score >= 75:
-        return "CRITICAL", "#ff0040", "critical"
-    elif score >= 50:
-        return "HIGH", "#ff6b35", "high"
-    elif score >= 25:
-        return "MEDIUM", "#ffd700", "medium"
-    return "LOW", "#00f5d4", "low"
-
-
-def count_severity(results: dict) -> dict:
-    text = " ".join(results.values()).upper()
-    return {
-        "critical": len(re.findall(r'\bCRITICAL\b', text)),
-        "high": len(re.findall(r'\bHIGH\b', text)),
-        "medium": len(re.findall(r'\bMEDIUM\b', text)),
-        "low": len(re.findall(r'\bLOW\b', text))
-    }
-
-
-# ── Sidebar ──
-with st.sidebar:
-    st.markdown("""
-    <div style="text-align:center;padding:1rem 0;">
-        <div style="font-size:3rem;">🕵️</div>
-        <h2 style="font-family:'Orbitron',monospace;
-                   background:linear-gradient(135deg,#00f5d4,#7c3aed);
-                   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-                   font-size:1.1rem;margin:0;">OSINT AI</h2>
-        <p style="color:#64748b;font-size:0.75rem;letter-spacing:2px;">THREAT INTELLIGENCE</p>
+# ──────────────────────────────────────────────────────────
+#  HELPER: Render Live Metrics Bar
+# ──────────────────────────────────────────────────────────
+def render_metrics_bar():
+    """Top metrics bar with live indicators."""
+    now = datetime.now().strftime("%H:%M:%S UTC")
+    st.markdown(f"""
+    <div class="metric-grid">
+        <div class="metric-card" style="border-top:3px solid var(--nx-accent-blue);">
+            <div class="mc-icon">🤖</div>
+            <div class="mc-value">5</div>
+            <div class="mc-label">Active Agents</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid var(--nx-accent-emerald);">
+            <div class="mc-icon">🔧</div>
+            <div class="mc-value">12</div>
+            <div class="mc-label">OSINT Tools</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid var(--nx-accent-amber);">
+            <div class="mc-icon">⚡</div>
+            <div class="mc-value">{MODEL_NAME.split('-')[0].upper()}</div>
+            <div class="mc-label">LLM Engine</div>
+        </div>
+        <div class="metric-card" style="border-top:3px solid var(--nx-accent-violet);">
+            <div class="mc-icon">🕐</div>
+            <div class="mc-value" style="font-size:1.1rem;">{now}</div>
+            <div class="mc-label">Session Time</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
-    st.markdown("### 🤖 Agent Team")
 
-    for key, agent in AGENT_CONFIG.items():
-        st.markdown(f"""
-        <div class="glass-card" style="padding:0.7rem;border-left:3px solid {agent['color']};">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-size:1.2rem;">{agent['icon']}</span>
-                <div>
-                    <div style="font-family:'Orbitron',monospace;font-size:0.6rem;
-                                color:{agent['color']};font-weight:700;">{agent['name'].upper()}</div>
-                    <div style="font-size:0.7rem;color:#94a3b8;">{agent['description']}</div>
-                </div>
-            </div>
+# ──────────────────────────────────────────────────────────
+#  HELPER: Risk Score Gauge
+# ──────────────────────────────────────────────────────────
+def render_risk_gauge(score: int):
+    """Render a circular risk gauge."""
+    if score >= 80:
+        color = "#f43f5e"
+        label = "CRITICAL"
+    elif score >= 60:
+        color = "#f59e0b"
+        label = "HIGH"
+    elif score >= 40:
+        color = "#3b82f6"
+        label = "MEDIUM"
+    elif score >= 20:
+        color = "#10b981"
+        label = "LOW"
+    else:
+        color = "#94a3b8"
+        label = "MINIMAL"
+
+    gauge_html = f"""
+    <div class="risk-gauge-container">
+        <div class="risk-gauge" style="
+            background: conic-gradient(
+                {color} 0deg,
+                {color}80 {score * 3.6}deg,
+                #1e293b {score * 3.6}deg,
+                #1e293b 360deg
+            );
+            box-shadow: 0 0 40px {color}30, inset 0 0 40px rgba(3,7,18,0.8);
+        ">
+            <div style="
+                position:absolute; width:160px; height:160px;
+                background: var(--nx-bg-primary);
+                border-radius: 50%;
+            "></div>
+            <div class="rg-score" style="color:{color};">{score}</div>
+            <div class="rg-label">{label} RISK</div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """
+    st.markdown(gauge_html, unsafe_allow_html=True)
 
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
-    st.markdown("### 🔧 Real Tools Used")
-    tools_list = [
-        "🌐 DNS Resolver (dnspython)",
-        "📋 WHOIS Lookup (python-whois)",
-        "🔒 SSL/TLS Inspector (ssl)",
-        "🛡️ HTTP Header Scanner",
-        "🔍 DuckDuckGo Search",
-        "📧 Email Security (SPF/DMARC)",
-        "🖥️ Tech Stack Detector",
-        "📍 IP Analyzer (ipaddress)"
+
+# ──────────────────────────────────────────────────────────
+#  HELPER: Parse risk score from Oracle report
+# ──────────────────────────────────────────────────────────
+def extract_risk_score(report_text: str) -> int:
+    """Try to pull a 0-100 risk score from the Oracle report."""
+    patterns = [
+        r'[Rr]isk\s*[Ss]core[:\s]*(\d{1,3})',
+        r'(\d{1,3})\s*/\s*100',
+        r'(\d{1,3})\s*out\s*of\s*100',
+        r'[Ss]core[:\s]*(\d{1,3})',
     ]
-    for tool in tools_list:
-        st.markdown(f"<p style='color:#94a3b8;font-size:0.75rem;margin:2px 0;'>{tool}</p>", unsafe_allow_html=True)
-
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div style="text-align:center;">
-        <p style="color:#475569;font-size:0.65rem;font-style:italic;">
-            ⚠️ For authorized security testing only.<br>
-            Always obtain proper authorization.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    for p in patterns:
+        m = re.search(p, report_text)
+        if m:
+            val = int(m.group(1))
+            if 0 <= val <= 100:
+                return val
+    return 45  # default
 
 
-# ── Main Content ──
-st.markdown("""
-<div class="cyber-header">
-    <span class="shield-icon">🕵️</span>
-    <h1>OSINT AI</h1>
-    <p class="subtitle">Multi-Agent Threat Intelligence Platform</p>
-    <div class="scanner-line"></div>
-</div>
-""", unsafe_allow_html=True)
-
-# ── Agent Showcase ──
-cols = st.columns(5)
-for i, (key, agent) in enumerate(AGENT_CONFIG.items()):
-    with cols[i]:
-        st.markdown(f"""
-        <div class="agent-card">
-            <span class="agent-icon">{agent['icon']}</span>
-            <div class="agent-name">{agent['name'].upper()}</div>
-            <div class="agent-desc">{agent['description']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
-
-# ── Input Section ──
-st.markdown("""
-<div style="text-align:center;margin-bottom:1rem;">
-    <h3 style="font-family:'Orbitron',monospace;color:#00f5d4;
-               font-size:1rem;letter-spacing:2px;">
-        🎯 ENTER TARGET FOR RECONNAISSANCE
-    </h3>
-    <p style="color:#64748b;font-size:0.9rem;">
-        Enter a domain name, IP address, or company name
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-target_input = st.text_input(
-    label="target",
-    label_visibility="collapsed",
-    placeholder="e.g. tesla.com, 8.8.8.8, microsoft.com, github.com",
-    key="target_input"
-)
-
-target_type = st.selectbox(
-    "Target Type",
-    ["Domain", "IP Address", "Company Name"],
-    index=0,
-    key="target_type"
-)
-
-# ── Example Targets ──
-with st.expander("💡 Click for example targets"):
-    ex_col1, ex_col2, ex_col3 = st.columns(3)
-    with ex_col1:
-        st.markdown("""
-        <div class="glass-card" style="padding:0.8rem;">
-            <div style="font-family:'Orbitron',monospace;font-size:0.7rem;color:#00f5d4;">🌐 DOMAINS</div>
-            <p style="color:#94a3b8;font-size:0.8rem;margin:0.3rem 0 0 0;">
-                tesla.com<br>github.com<br>stripe.com<br>cloudflare.com
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-    with ex_col2:
-        st.markdown("""
-        <div class="glass-card" style="padding:0.8rem;">
-            <div style="font-family:'Orbitron',monospace;font-size:0.7rem;color:#ff0040;">📍 IP ADDRESSES</div>
-            <p style="color:#94a3b8;font-size:0.8rem;margin:0.3rem 0 0 0;">
-                8.8.8.8 (Google DNS)<br>1.1.1.1 (Cloudflare)<br>13.107.42.14 (Microsoft)
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-    with ex_col3:
-        st.markdown("""
-        <div class="glass-card" style="padding:0.8rem;">
-            <div style="font-family:'Orbitron',monospace;font-size:0.7rem;color:#7c3aed;">🏢 COMPANIES</div>
-            <p style="color:#94a3b8;font-size:0.8rem;margin:0.3rem 0 0 0;">
-                Apple Inc<br>Amazon Web Services<br>Meta Platforms
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-st.markdown("")
-
-# ── Launch Button ──
-col_l, col_c, col_r = st.columns([1, 2, 1])
-with col_c:
-    launch = st.button("🚀  LAUNCH OSINT RECONNAISSANCE", use_container_width=True)
-
-# ── Execution ──
-if launch:
-    if not GROQ_API_KEY:
-        st.error("⚠️ **GROQ_API_KEY not found!** Add it to Streamlit Secrets or `.env` file.")
-        st.code("GROQ_API_KEY=gsk_your_key_here", language="bash")
-        st.stop()
-
-    if not target_input or len(target_input.strip()) < 3:
-        st.warning("⚠️ Please enter a valid target (at least 3 characters).")
-        st.stop()
-
-    target = target_input.strip().lower()
-
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
+# ──────────────────────────────────────────────────────────
+#  HELPER: Format agent output nicely
+# ──────────────────────────────────────────────────────────
+def render_agent_findings(agent_key: str, content: str):
+    """Render findings inside a styled card."""
+    a = AGENT_PROFILES[agent_key]
+    c = a["color"]
 
     st.markdown(f"""
-    <div style="text-align:center;margin:1rem 0;">
-        <h2 style="font-family:'Orbitron',monospace;color:#00f5d4;
-                   font-size:1.1rem;letter-spacing:3px;">
-            🔄 RECONNAISSANCE IN PROGRESS
-        </h2>
-        <p style="color:#94a3b8;font-size:0.9rem;">Target: <strong style="color:#00f5d4;">{target}</strong></p>
-        <div class="scanner-line"></div>
+    <div class="nx-card" style="border-left:4px solid {c};">
+        <div class="nx-card-title" style="color:{c};">
+            <img src="{a['avatar_url']}" style="
+                width:36px;height:36px;border-radius:50%;
+                border:2px solid {c};background:#0f1629;
+            "/>
+            {a['icon']} {a['name']} — {a['role']}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Run All Agents ──
-    start_time = time.time()
-    results = run_osint_audit(target, target_type)
-    elapsed = time.time() - start_time
+    st.markdown(content)
 
-    # ── Success Banner ──
-    st.markdown(f"""
-    <div class="glass-card" style="text-align:center;border-color:rgba(0,245,212,0.4);
-                                    background:rgba(0,245,212,0.03);">
-        <h2 style="font-family:'Orbitron',monospace;color:#00f5d4;margin:0 0 0.5rem 0;">
-            ✅ RECONNAISSANCE COMPLETE
-        </h2>
-        <p style="color:#94a3b8;margin:0;">
-            5 agents analyzed <strong style="color:#00f5d4;">{target}</strong>
-            in <strong style="color:#00f5d4;">{elapsed:.1f}s</strong>
-            using real DNS, WHOIS, SSL, and threat intel tools
-        </p>
+
+# ──────────────────────────────────────────────────────────
+#  HELPER: Live animated header component
+# ──────────────────────────────────────────────────────────
+def render_header():
+    """Main NEXUS header with animated elements."""
+    header_html = """
+    <div style="
+        position:relative; text-align:center;
+        padding:2rem 1rem 1.5rem; margin-bottom:0.5rem;
+    ">
+        <div style="
+            position:absolute; top:50%; left:50%;
+            width:500px; height:500px;
+            transform:translate(-50%,-50%);
+            background:radial-gradient(circle,rgba(59,130,246,0.06),transparent 65%);
+            pointer-events:none;
+        "></div>
+
+        <div style="
+            font-family:'Exo 2',sans-serif;
+            font-size:3.2rem; font-weight:900;
+            letter-spacing:12px;
+            background:linear-gradient(135deg,#3b82f6,#10b981,#f59e0b);
+            -webkit-background-clip:text;
+            -webkit-text-fill-color:transparent;
+            background-clip:text;
+            position:relative;
+        ">
+            🔮 NEXUS
+            <div style="
+                position:absolute; bottom:-2px; left:15%; width:70%; height:2px;
+                background:linear-gradient(90deg,transparent,#3b82f6,#10b981,transparent);
+            "></div>
+        </div>
+
+        <div style="
+            font-family:'Space Grotesk',sans-serif;
+            font-size:0.8rem; color:#94a3b8;
+            letter-spacing:6px; text-transform:uppercase;
+            margin-top:0.6rem;
+        ">
+            AI-Powered OSINT & Threat Intelligence Platform
+        </div>
+
+        <div style="
+            display:inline-block; margin-top:0.7rem;
+            padding:3px 14px;
+            background:rgba(59,130,246,0.1);
+            border:1px solid rgba(59,130,246,0.25);
+            border-radius:20px;
+            font-family:'Fira Code',monospace;
+            font-size:0.6rem; color:#3b82f6;
+            letter-spacing:2px;
+        ">
+            <span style="display:inline-block;width:6px;height:6px;
+                         background:#10b981;border-radius:50%;margin-right:6px;
+                         box-shadow:0 0 6px #10b981;"></span>
+            v2.0 • MULTI-AGENT • LIVE RECON
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
 
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
 
-    # ── Extract Metrics ──
-    risk_score = extract_risk_score(results.get("final_report", ""))
-    grade = extract_grade(results.get("final_report", ""))
-    risk_level, risk_color, risk_class = get_risk_info(risk_score)
-    findings = count_severity(results)
+# ──────────────────────────────────────────────────────────
+#  MAIN APP
+# ──────────────────────────────────────────────────────────
+def main():
+    # Inject full CSS
+    st.markdown(NEXUS_CSS, unsafe_allow_html=True)
 
-    # ── Dashboard Header ──
+    # Header
+    render_header()
+
+    # Live metrics
+    render_metrics_bar()
+
+    # Agent showcase
     st.markdown("""
-    <div style="text-align:center;margin-bottom:1.5rem;">
-        <h3 style="font-family:'Orbitron',monospace;color:#94a3b8;
-                   font-size:0.9rem;letter-spacing:3px;">
-            ── THREAT INTELLIGENCE DASHBOARD ──
-        </h3>
+    <div style="
+        font-family:'Exo 2',sans-serif; font-size:0.85rem;
+        font-weight:700; letter-spacing:3px; color:#94a3b8;
+        text-transform:uppercase; margin-bottom:0.5rem;
+        text-align:center;
+    ">
+        <span style="display:inline-block;width:6px;height:6px;
+                     background:#3b82f6;border-radius:50%;margin-right:8px;
+                     box-shadow:0 0 6px #3b82f6;"></span>
+        AGENT SQUAD — READY FOR DEPLOYMENT
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Risk Score Circles ──
-    s1, s2, s3 = st.columns([1, 1, 1])
+    render_agent_showcase()
 
-    with s1:
-        st.markdown(f"""
-        <div class="risk-score-container">
-            <div class="risk-score-circle {risk_class}" style="--pct:{risk_score}%;">
-                <div class="risk-score-inner">
-                    <div class="risk-score-value" style="color:{risk_color};">{risk_score}</div>
-                    <div class="risk-score-label">Risk Score</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with s2:
-        st.markdown(f"""
-        <div class="risk-score-container">
-            <div class="risk-score-circle {risk_class}" style="--pct:{100 - risk_score}%;">
-                <div class="risk-score-inner">
-                    <div class="risk-score-value" style="color:{risk_color};">{grade}</div>
-                    <div class="risk-score-label">Security Grade</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with s3:
-        st.markdown(f"""
-        <div class="risk-score-container">
-            <div class="risk-score-circle {risk_class}" style="--pct:{risk_score}%;">
-                <div class="risk-score-inner">
-                    <div class="risk-score-value" style="color:{risk_color};font-size:1.4rem;">{risk_level}</div>
-                    <div class="risk-score-label">Threat Level</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ── Findings Stats ──
-    st.markdown("")
-    f1, f2, f3, f4 = st.columns(4)
-
-    with f1:
-        st.markdown(f"""
-        <div class="stat-card" style="border-top:3px solid #ff0040;">
-            <div class="stat-value" style="color:#ff0040;">{findings['critical']}</div>
-            <div class="stat-label">Critical</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with f2:
-        st.markdown(f"""
-        <div class="stat-card" style="border-top:3px solid #ff6b35;">
-            <div class="stat-value" style="color:#ff6b35;">{findings['high']}</div>
-            <div class="stat-label">High</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with f3:
-        st.markdown(f"""
-        <div class="stat-card" style="border-top:3px solid #ffd700;">
-            <div class="stat-value" style="color:#ffd700;">{findings['medium']}</div>
-            <div class="stat-label">Medium</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with f4:
-        st.markdown(f"""
-        <div class="stat-card" style="border-top:3px solid #00d4aa;">
-            <div class="stat-value" style="color:#00d4aa;">{findings['low']}</div>
-            <div class="stat-label">Low</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
-
-    # ── Detailed Results Tabs ──
+    # ── Input Section ──
     st.markdown("""
-    <div style="text-align:center;margin-bottom:1rem;">
-        <h3 style="font-family:'Orbitron',monospace;color:#94a3b8;
-                   font-size:0.9rem;letter-spacing:3px;">
-            ── DETAILED INTELLIGENCE REPORTS ──
-        </h3>
+    <div style="
+        font-family:'Exo 2',sans-serif; font-size:1rem;
+        font-weight:700; letter-spacing:3px; color:#3b82f6;
+        margin:1.5rem 0 0.8rem;
+    ">
+        🎯 TARGET ACQUISITION
     </div>
     """, unsafe_allow_html=True)
 
-    tabs = st.tabs([
-        "📊 Executive Report",
-        "🌐 Domain Recon",
-        "🔍 Threat Intel",
-        "🗺️ Attack Surface",
-        "📧 Email OSINT"
-    ])
+    col1, col2 = st.columns([3, 1])
 
-    with tabs[0]:
-        st.markdown(results.get("final_report", "No report generated."))
+    with col1:
+        target = st.text_input(
+            "TARGET",
+            placeholder="e.g. example.com, 192.168.1.1, Acme Corp",
+            label_visibility="collapsed",
+        )
 
-    with tabs[1]:
-        st.markdown(results.get("domain_recon", "No domain recon generated."))
+    with col2:
+        target_type = st.selectbox(
+            "TYPE",
+            ["Domain", "IP Address", "Company"],
+            label_visibility="collapsed",
+        )
 
-    with tabs[2]:
-        st.markdown(results.get("threat_intel", "No threat intel generated."))
+    # ── Launch Button ──
+    launch = st.button("🚀  DEPLOY AGENTS  —  BEGIN RECONNAISSANCE", use_container_width=True)
 
-    with tabs[3]:
-        st.markdown(results.get("attack_surface", "No attack surface analysis generated."))
+    # ── API Key Check ──
+    api_key = GROQ_API_KEY or st.secrets.get("GROQ_API_KEY", "")
+    if not api_key:
+        st.markdown("""
+        <div style="
+            background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.25);
+            border-radius:12px; padding:1rem 1.2rem; margin-top:1rem;
+            font-family:'Space Grotesk',sans-serif; color:#f1f5f9;
+        ">
+            <span style="color:#f43f5e;font-weight:700;">⚠ GROQ API KEY REQUIRED</span><br/>
+            <span style="font-size:0.82rem;color:#94a3b8;">
+                Add your key in Streamlit Cloud → Settings → Secrets:<br/>
+                <code style="background:#1e293b;padding:2px 8px;border-radius:4px;
+                             font-family:'Fira Code',monospace;font-size:0.75rem;">
+                    GROQ_API_KEY = "gsk_your_key_here"
+                </code>
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+        return
 
-    with tabs[4]:
-        st.markdown(results.get("email_osint", "No email OSINT generated."))
+    # ── Run Pipeline ──
+    if launch and target.strip():
+        start_time = time.time()
 
-    st.markdown('<div class="cyber-divider"></div>', unsafe_allow_html=True)
+        results = run_osint_audit(target.strip(), target_type.lower())
 
-    # ── PDF Export ──
+        elapsed = round(time.time() - start_time, 1)
+
+        # ── SUCCESS BANNER ──
+        st.markdown(f"""
+        <div style="
+            background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(59,130,246,0.1));
+            border:1px solid rgba(16,185,129,0.3);
+            border-radius:16px; padding:1.2rem 1.5rem;
+            margin:1.5rem 0; text-align:center;
+        ">
+            <span style="font-family:'Exo 2',sans-serif;font-size:1.3rem;
+                         font-weight:900;color:#10b981;letter-spacing:3px;">
+                ✅ RECONNAISSANCE COMPLETE
+            </span><br/>
+            <span style="font-family:'Fira Code',monospace;font-size:0.8rem;color:#94a3b8;">
+                5 agents deployed • 12 tools executed •
+                {elapsed}s total elapsed • Target: {target}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── RISK GAUGE ──
+        oracle_text = results.get("oracle", "")
+        risk_score = extract_risk_score(oracle_text)
+        render_risk_gauge(risk_score)
+
+        # ── RESULTS TABS ──
+        tab_labels = [
+            f"{AGENT_PROFILES[k]['icon']} {AGENT_PROFILES[k]['name']}"
+            for k in ["aria", "raven", "vulcan", "cipher", "oracle"]
+        ]
+        tabs = st.tabs(tab_labels)
+
+        agent_keys = ["aria", "raven", "vulcan", "cipher", "oracle"]
+        for tab, key in zip(tabs, agent_keys):
+            with tab:
+                content = results.get(key, "_No data collected._")
+                render_agent_findings(key, content)
+
+        # ── DOWNLOAD RAW JSON ──
+        st.markdown("---")
+        st.markdown("""
+        <div style="
+            font-family:'Exo 2',sans-serif; font-size:0.85rem;
+            font-weight:700; letter-spacing:3px; color:#94a3b8;
+            margin-bottom:0.5rem;
+        ">📥 EXPORT INTELLIGENCE</div>
+        """, unsafe_allow_html=True)
+
+        export_data = {
+            "target": target,
+            "type": target_type,
+            "timestamp": datetime.now().isoformat(),
+            "risk_score": risk_score,
+            "elapsed_seconds": elapsed,
+            "model": MODEL_NAME,
+            "findings": results,
+        }
+
+        st.download_button(
+            label="⬇  Download Full Report (JSON)",
+            data=json.dumps(export_data, indent=2, default=str),
+            file_name=f"nexus_report_{target.replace('.','_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+    elif launch and not target.strip():
+        st.markdown("""
+        <div style="
+            background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);
+            border-radius:12px;padding:0.8rem 1.2rem;margin-top:1rem;
+            font-family:'Space Grotesk',sans-serif;color:#f59e0b;
+            font-size:0.85rem;
+        ">
+            ⚠ Please enter a target domain, IP address, or company name.
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── FOOTER ──
     st.markdown("""
-    <div style="text-align:center;margin-bottom:1rem;">
-        <h3 style="font-family:'Orbitron',monospace;color:#7c3aed;
-                   font-size:0.9rem;letter-spacing:3px;">
-            📥 EXPORT INTELLIGENCE REPORT
-        </h3>
+    <div style="
+        text-align:center; margin-top:3rem; padding:1.5rem;
+        border-top:1px solid #1e293b;
+    ">
+        <span style="font-family:'Fira Code',monospace;font-size:0.65rem;
+                     color:#475569;letter-spacing:2px;">
+            NEXUS COMMAND v2.0 • Multi-Agent OSINT Platform •
+            Powered by Groq LLM • Built for Hackathon Excellence
+        </span>
     </div>
     """, unsafe_allow_html=True)
 
-    dl1, dl2, dl3 = st.columns([1, 2, 1])
-    with dl2:
-        try:
-            pdf_bytes = generate_pdf(results)
-            st.download_button(
-                label="⬇️  DOWNLOAD PDF REPORT",
-                data=pdf_bytes,
-                file_name=f"OSINT_Report_{target.replace('.', '_')}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-        except Exception as e:
-            st.error(f"PDF generation error: {e}")
 
-
-# ── Footer ──
-st.markdown("""
-<div class="cyber-footer">
-    <p style="color:#94a3b8;font-size:0.85rem;letter-spacing:1px;">
-        Built with ❤️ by <strong style="color:#00f5d4;">OSINT AI</strong>
-    </p>
-    <div style="display:flex;justify-content:center;gap:0.8rem;margin-top:0.5rem;flex-wrap:wrap;">
-        <span class="tech-badge">Python</span>
-        <span class="tech-badge">Streamlit</span>
-        <span class="tech-badge">Groq</span>
-        <span class="tech-badge">LLaMA 3.3</span>
-        <span class="tech-badge">dnspython</span>
-        <span class="tech-badge">WHOIS</span>
-        <span class="tech-badge">DuckDuckGo</span>
-        <span class="tech-badge">Multi-Agent</span>
-    </div>
-    <p style="color:#475569;font-size:0.7rem;margin-top:1rem;">
-        ⚠️ For authorized security testing and educational purposes only.
-    </p>
-</div>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
