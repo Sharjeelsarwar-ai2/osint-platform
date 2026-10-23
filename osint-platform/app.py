@@ -232,7 +232,13 @@ def render_report(report):
             if not content:
                 st.warning("This session contains a legacy incomplete response. Run a fresh scan to replace it.")
             elif content.startswith("# Preliminary findings — evidence fallback"):
-                st.warning("The model synthesis was unavailable; these are preliminary tool results, not a complete assessment.")
+                st.warning("Model synthesis was unavailable. The content below is a preliminary evidence compilation, not a validated risk assessment.")
+                diagnostic = re.search(
+                    r"Final language-model synthesis was unavailable:\s*([^\r\n]+)",
+                    content,
+                )
+                if diagnostic:
+                    st.caption("SYNTHESIS DIAGNOSTIC · " + diagnostic.group(1)[:320])
                 st.markdown(content)
             elif content.startswith("# Agent execution failed"):
                 st.error(content)

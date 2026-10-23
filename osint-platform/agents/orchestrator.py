@@ -289,6 +289,7 @@ def run_osint_audit(target, target_type):
                 finding = run_agent_with_tools(
                     system_prompt, user_prompt, [], execute_tool, 1,
                     activity_callback=activity_callback,
+                    fallback_context=context,
                 )
             else:
                 user_prompt = (

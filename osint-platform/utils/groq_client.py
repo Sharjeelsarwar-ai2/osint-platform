@@ -43,12 +43,12 @@ def _content_text(message):
     return ""
 
 
-def _fallback_report(tool_results, reason):
+def _fallback_report(tool_results, reason, source_context=None):
     lines = [
         "# Preliminary findings — evidence fallback",
         "",
-        "The model did not produce a complete synthesis, so this response lists the tool evidence "
-        "that was collected. Treat it as preliminary and verify the source data before acting.",
+        "The model did not produce a complete synthesis. The sections below preserve available "
+        "evidence without adding unsupported interpretation. Verify source data before acting.",
         "",
     ]
     if tool_results:
@@ -57,7 +57,17 @@ def _fallback_report(tool_results, reason):
             args = json.dumps(item["args"], ensure_ascii=False, default=str)
             result = item["result"][:1500]
             lines.append(f"- **{item['name']}** with `{args}`: {result}")
-    else:
+    if source_context:
+        context_text = str(source_context).strip()
+        if len(context_text) > 12000:
+            context_text = context_text[:12000] + "\n\n[Additional specialist context omitted for length.]"
+        lines.extend([
+            "",
+            "## Findings supplied by completed specialists",
+            "",
+            context_text,
+        ])
+    if not tool_results and not source_context:
         lines.extend(["## Tool evidence", "", "No tool evidence was collected."])
     lines.extend([
         "",
@@ -71,7 +81,7 @@ def _fallback_report(tool_results, reason):
 
 
 def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
-                         max_rounds=5, activity_callback=None):
+                         max_rounds=5, activity_callback=None, fallback_context=None):
     """Run bounded tool rounds, then always request a tool-free final synthesis."""
     messages = [
         {"role": "system", "content": system_prompt},
@@ -128,21 +138,29 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
             _emit(activity_callback, "error", last_error)
             break
 
-        messages.append({
-            "role": "assistant",
-            "content": _content_text(message),
-            "tool_calls": [
-                {
-                    "id": call.id,
-                    "type": "function",
-                    "function": {
-                        "name": call.function.name,
-                        "arguments": call.function.arguments,
-                    },
-                }
-                for call in tool_calls
-            ],
-        })
+        # Preserve provider-specific assistant fields (e.g. GPT-OSS reasoning metadata)
+        # rather than rebuilding a partial tool-call message.
+        dump_message = getattr(message, "model_dump", None)
+        if callable(dump_message):
+            assistant_message = dump_message(exclude_none=True)
+            assistant_message["role"] = "assistant"
+        else:
+            assistant_message = {
+                "role": "assistant",
+                "content": _content_text(message),
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        },
+                    }
+                    for call in tool_calls
+                ],
+            }
+        messages.append(assistant_message)
 
         for call in tool_calls:
             name = call.function.name
@@ -177,6 +195,7 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
             messages.append({
                 "role": "tool",
                 "tool_call_id": call.id,
+                "name": name,
                 "content": result_str[:6000],
             })
 
@@ -222,7 +241,7 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
             last_error = f"final synthesis failed ({type(exc).__name__}: {exc})"
         _emit(activity_callback, "error", last_error)
 
-    fallback = _fallback_report(tool_results, last_error)
+    fallback = _fallback_report(tool_results, last_error, fallback_context)
     _emit(activity_callback, "fallback", {"reason": last_error, "tool_count": len(tool_results)})
     _emit(activity_callback, "final", fallback)
     return fallback
