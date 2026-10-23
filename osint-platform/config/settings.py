@@ -103,3 +103,5 @@ AGENT_PROFILES = {
         ),
     },
 }
+# Backwards-compatible alias
+AGENT_CONFIG = AGENT_PROFILES
