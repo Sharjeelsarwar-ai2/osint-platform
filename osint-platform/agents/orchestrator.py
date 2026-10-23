@@ -1,7 +1,6 @@
 """
-Multi-Agent Orchestrator — OSINT & Threat Intelligence Platform
+Multi-Agent Orchestrator — NEXUS COMMAND
 Each agent runs sequentially with real Groq tool-calling.
-Avatars rendered via st.components.v1.html() for guaranteed display.
 """
 
 import streamlit as st
@@ -13,217 +12,217 @@ from agents.tools import GROQ_TOOL_DEFINITIONS, execute_tool
 
 
 # ──────────────────────────────────────────────
-#  KEYFRAME CSS (embedded in every iframe)
+#  KEYFRAMES (embedded in each iframe)
 # ──────────────────────────────────────────────
-_SHARED_KEYFRAMES = """
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@400;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap');
+_IFRAME_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@700;900&family=Space+Grotesk:wght@400;600&family=Fira+Code:wght@400;500&display=swap');
 html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
 
 @keyframes spin {
     0%   { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
-@keyframes innerPulse {
-    0%, 100% { opacity: 0.15; transform: scale(1); }
-    50%      { opacity: 0.35; transform: scale(1.06); }
+@keyframes agentFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
 }
-@keyframes avatarFloat {
-    0%, 100% { transform: translateY(0px); }
-    50%      { transform: translateY(-6px); }
-}
-@keyframes typingDot {
+@keyframes dotPulse {
     0%, 80%, 100% { transform: scale(0.5); opacity: 0.3; }
     40%           { transform: scale(1.1); opacity: 1; }
 }
-@keyframes statusBlink {
-    0%, 100% { opacity: 1; box-shadow: 0 0 8px #00ff00; }
-    50%      { opacity: 0.3; box-shadow: 0 0 2px #00ff00; }
+@keyframes statusGlow {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px #10b981; }
+    50%      { opacity: 0.3; box-shadow: 0 0 2px #10b981; }
 }
-@keyframes scanLine {
+@keyframes scanMove {
     0%   { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
+}
+@keyframes borderGlow {
+    0%, 100% { opacity: 0.3; }
+    50%      { opacity: 0.8; }
 }
 """
 
 
 # ──────────────────────────────────────────────
-#  RENDER: ACTIVE AGENT (working)
+#  RENDER: Active Agent Card
 # ──────────────────────────────────────────────
 def render_agent_avatar(agent_key: str, status: str = "working"):
-    """Show a full animated agent card while the agent is running."""
+    """Full animated card shown while agent is running."""
     a = AGENT_PROFILES[agent_key]
     c = a["color"]
 
     html = f"""
-    <style>{_SHARED_KEYFRAMES}</style>
+    <style>{_IFRAME_CSS}</style>
     <div style="
-        display:flex; align-items:center; gap:1.4rem;
-        padding:1.2rem 1.5rem;
-        background: linear-gradient(135deg, {c}12, {c}06, #0a0e1780);
-        border:1px solid {c}40;
+        display:flex; align-items:center; gap:1.2rem;
+        padding:1rem 1.3rem;
+        background: linear-gradient(160deg, #11182790, {c}08, #0f162980);
+        border:1px solid {c}30;
         border-radius:16px;
         position:relative; overflow:hidden;
+        font-family:'Space Grotesk',sans-serif;
     ">
-        <!-- scanner line -->
+        <!-- Top scanner -->
         <div style="
-            position:absolute; top:0; left:0;
-            width:100%; height:2px;
-            background:linear-gradient(90deg, transparent, {c}, transparent);
-            animation: scanLine 2.5s linear infinite;
+            position:absolute;top:0;left:0;width:100%;height:2px;
+            background:linear-gradient(90deg,transparent,{c},transparent);
+            animation:scanMove 2.5s linear infinite;
         "></div>
 
-        <!-- avatar block -->
-        <div style="position:relative; width:96px; height:96px; flex-shrink:0;">
-            <!-- rotating ring -->
+        <!-- Bottom glow bar -->
+        <div style="
+            position:absolute;bottom:0;left:10%;width:80%;height:1px;
+            background:linear-gradient(90deg,transparent,{c}60,transparent);
+            animation:borderGlow 2s ease-in-out infinite;
+        "></div>
+
+        <!-- Avatar block -->
+        <div style="position:relative;width:88px;height:88px;flex-shrink:0;">
+            <!-- Rotating ring -->
             <div style="
-                position:absolute; top:-7px; left:-7px;
-                width:110px; height:110px;
-                border:3px solid transparent;
-                border-top-color:{c}; border-right-color:{c}70;
+                position:absolute;top:-6px;left:-6px;width:100px;height:100px;
+                border:2px solid transparent;
+                border-top-color:{c};border-right-color:{c}50;
                 border-radius:50%;
-                animation: spin 2s linear infinite;
+                animation:spin 2s linear infinite;
             "></div>
-            <!-- inner glow -->
-            <div style="
-                position:absolute; top:0; left:0;
-                width:96px; height:96px;
-                border-radius:50%; background:{c};
-                opacity:0.15;
-                animation: innerPulse 1.5s ease-in-out infinite;
-            "></div>
-            <!-- avatar img -->
+            <!-- Avatar -->
             <img src="{a['avatar_url']}" style="
-                width:96px; height:96px;
-                border-radius:50%;
-                border:3px solid {c};
-                background:#0a0e17;
-                box-shadow: 0 0 20px {c}60;
-                animation: avatarFloat 3s ease-in-out infinite;
-                position:relative; z-index:1;
+                width:88px;height:88px;border-radius:50%;
+                border:2px solid {c};background:#0a0e17;
+                box-shadow:0 0 25px {c}30;
+                animation:agentFloat 3s ease-in-out infinite;
+                position:relative;z-index:1;
             " alt="{a['name']}"/>
-            <!-- status dot -->
+            <!-- Status dot -->
             <div style="
-                position:absolute; bottom:4px; right:4px;
-                width:18px; height:18px;
-                background:#00ff00;
-                border:3px solid #0a0e17;
-                border-radius:50%;
-                animation: statusBlink 1s ease-in-out infinite;
-                z-index:3;
+                position:absolute;bottom:3px;right:3px;
+                width:16px;height:16px;
+                background:#10b981;border:3px solid #030712;
+                border-radius:50%;z-index:3;
+                animation:statusGlow 1s ease-in-out infinite;
             "></div>
         </div>
 
-        <!-- info block -->
+        <!-- Info block -->
         <div style="flex:1;">
-            <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.2rem;">
-                <span style="font-size:1.5rem;">{a['icon']}</span>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <span style="font-size:1.3rem;">{a['icon']}</span>
                 <div>
                     <div style="
-                        font-family:'Orbitron',monospace;
-                        font-size:1.2rem; font-weight:900;
-                        color:{c}; letter-spacing:3px;
-                        text-shadow: 0 0 10px {c}60;
+                        font-family:'Exo 2',sans-serif;
+                        font-size:1.15rem;font-weight:900;
+                        color:{c};letter-spacing:3px;
+                        text-shadow:0 0 12px {c}40;
                     ">{a['name']}</div>
                     <div style="
-                        font-family:'Rajdhani',sans-serif;
-                        font-size:0.72rem; color:#94a3b8;
-                        letter-spacing:2px; text-transform:uppercase;
+                        font-size:0.68rem;color:#94a3b8;
+                        letter-spacing:2px;text-transform:uppercase;
                     ">{a['role']}</div>
                 </div>
             </div>
 
-            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
-                <div style="display:flex; gap:4px;">
-                    <span style="width:7px;height:7px;background:{c};border-radius:50%;animation:typingDot 1.4s ease-in-out infinite;animation-delay:0s;"></span>
-                    <span style="width:7px;height:7px;background:{c};border-radius:50%;animation:typingDot 1.4s ease-in-out infinite;animation-delay:0.2s;"></span>
-                    <span style="width:7px;height:7px;background:{c};border-radius:50%;animation:typingDot 1.4s ease-in-out infinite;animation-delay:0.4s;"></span>
+            <!-- Typing indicator -->
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;">
+                <div style="display:flex;gap:3px;">
+                    <span style="width:6px;height:6px;background:{c};border-radius:50%;animation:dotPulse 1.4s ease-in-out infinite;animation-delay:0s;"></span>
+                    <span style="width:6px;height:6px;background:{c};border-radius:50%;animation:dotPulse 1.4s ease-in-out infinite;animation-delay:0.2s;"></span>
+                    <span style="width:6px;height:6px;background:{c};border-radius:50%;animation:dotPulse 1.4s ease-in-out infinite;animation-delay:0.4s;"></span>
                 </div>
-                <p style="
-                    margin:0;
-                    font-family:'JetBrains Mono',monospace;
-                    font-size:0.85rem; color:#e2e8f0;
+                <span style="
+                    font-family:'Fira Code',monospace;
+                    font-size:0.8rem;color:#e2e8f0;
                     font-style:italic;
-                ">{a['catchphrase']}</p>
+                ">{a['catchphrase']}</span>
             </div>
 
-            <div style="margin-top:0.5rem;">
+            <!-- Status badge -->
+            <div style="margin-top:0.4rem;">
                 <span style="
-                    display:inline-block; padding:2px 10px;
-                    background:{c}18; border:1px solid {c};
-                    border-radius:12px;
-                    font-family:'Orbitron',monospace;
-                    font-size:0.6rem; color:{c};
-                    letter-spacing:2px; font-weight:700;
-                ">● WORKING</span>
+                    display:inline-block;padding:2px 10px;
+                    background:{c}15;border:1px solid {c};
+                    border-radius:10px;
+                    font-family:'Fira Code',monospace;
+                    font-size:0.58rem;color:{c};
+                    letter-spacing:2px;font-weight:600;
+                ">● EXECUTING</span>
                 <span style="
                     margin-left:0.5rem;
-                    font-family:'JetBrains Mono',monospace;
-                    font-size:0.65rem; color:#64748b;
-                ">Executing real-world tools…</span>
+                    font-family:'Fira Code',monospace;
+                    font-size:0.62rem;color:#475569;
+                ">Real-world tools in progress…</span>
             </div>
         </div>
     </div>
     """
-    components.html(html, height=145, scrolling=False)
+    components.html(html, height=130, scrolling=False)
 
 
 # ──────────────────────────────────────────────
-#  RENDER: COMPLETED AGENT (badge)
+#  RENDER: Completed Agent Badge
 # ──────────────────────────────────────────────
 def render_agent_complete(agent_key: str):
-    """Show a compact 'done' badge after agent finishes."""
+    """Compact badge shown after agent finishes."""
     a = AGENT_PROFILES[agent_key]
     c = a["color"]
 
     html = f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@700&family=Fira+Code:wght@400&display=swap');
     html, body {{ margin:0; padding:0; background:transparent; overflow:hidden; }}
     </style>
     <div style="
-        display:inline-flex; align-items:center; gap:0.5rem;
-        padding:0.35rem 0.9rem;
-        background:{c}10; border:1px solid {c}30;
+        display:inline-flex;align-items:center;gap:0.5rem;
+        padding:0.3rem 0.8rem;
+        background:{c}08;border:1px solid {c}25;
         border-radius:20px;
+        font-family:'Space Grotesk',sans-serif;
     ">
         <img src="{a['avatar_url']}" style="
-            width:26px; height:26px;
-            border-radius:50%; border:2px solid {c};
+            width:24px;height:24px;border-radius:50%;
+            border:2px solid {c};background:#0a0e17;
         " alt="{a['name']}"/>
         <span style="
-            font-family:'Orbitron',monospace;
-            font-size:0.7rem; color:{c};
-            letter-spacing:2px; font-weight:700;
+            font-family:'Exo 2',sans-serif;
+            font-size:0.65rem;color:{c};
+            letter-spacing:2px;font-weight:700;
         ">{a['icon']} {a['name']}</span>
-        <span style="color:#00ff00; font-size:0.85rem;">✓</span>
+        <span style="color:#10b981;font-size:0.8rem;">✓</span>
+        <span style="
+            font-family:'Fira Code',monospace;
+            font-size:0.58rem;color:#475569;
+        ">DONE</span>
     </div>
     """
-    components.html(html, height=42, scrolling=False)
+    components.html(html, height=40, scrolling=False)
 
 
 # ──────────────────────────────────────────────
 #  MAIN ORCHESTRATOR
 # ──────────────────────────────────────────────
 def run_osint_audit(target: str, target_type: str):
-    """
-    Run all 5 OSINT agents sequentially.
-    Each agent uses real Groq tool-calling with live OSINT tools.
-    """
+    """Run all 5 OSINT agents sequentially with live UI feedback."""
     results = {}
 
-    # ── Layout placeholders ──
     st.markdown("---")
-    st.markdown(
-        '<h3 style="font-family:Orbitron;color:#00f5d4;text-align:center;'
-        'letter-spacing:4px;">⚡ AGENT DEPLOYMENT IN PROGRESS ⚡</h3>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("""
+    <div style="text-align:center;margin:1rem 0;">
+        <span style="
+            font-family:'Exo 2',sans-serif;font-size:1.1rem;
+            font-weight:900;letter-spacing:5px;
+            background:linear-gradient(135deg,#3b82f6,#10b981);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+            background-clip:text;
+        ">⚡ AGENT DEPLOYMENT IN PROGRESS ⚡</span>
+    </div>
+    """, unsafe_allow_html=True)
 
-    active_box = st.empty()          # shows current working agent
-    completed_col = st.container()   # accumulates finished badges
+    active_box = st.empty()
+    completed_container = st.container()
     st.markdown("---")
 
-    # ── Agent pipeline ──
     pipeline = [
         ("aria",   "domain_recon",    6),
         ("raven",  "threat_intel",    4),
@@ -235,20 +234,19 @@ def run_osint_audit(target: str, target_type: str):
     for agent_key, task, max_rounds in pipeline:
         agent = AGENT_PROFILES[agent_key]
 
-        # 1 ▸ Show active avatar
+        # Show active agent
         with active_box.container():
             render_agent_avatar(agent_key)
 
-        # 2 ▸ Build prompts
+        # Build prompts
         system_prompt = (
-            f"You are {agent['name']}, a specialist {agent['role']} agent "
+            f"You are {agent['name']}, a specialist {agent['role']} "
             f"in an elite OSINT team. {agent['description']} "
             f"Always use the provided tools to gather REAL data. "
             f"Never fabricate information. Be thorough and technical."
         )
 
         if task == "final_report":
-            # Oracle synthesises everything — no tools
             context = "\n\n".join(
                 f"### {k.upper()} FINDINGS\n{v}" for k, v in results.items()
             )
@@ -256,7 +254,7 @@ def run_osint_audit(target: str, target_type: str):
                 f"Target: {target} ({target_type})\n\n"
                 f"Below are the findings from all reconnaissance agents:\n\n"
                 f"{context}\n\n"
-                f"Produce a comprehensive, executive-grade OSINT report with:\n"
+                f"Produce a comprehensive executive-grade OSINT report with:\n"
                 f"1. Executive Summary\n"
                 f"2. Risk Score (0-100) with justification\n"
                 f"3. Key Findings by category\n"
@@ -287,11 +285,11 @@ def run_osint_audit(target: str, target_type: str):
 
         results[agent_key] = finding
 
-        # 3 ▸ Mark complete — swap active → completed badge
+        # Swap to completed
         active_box.empty()
-        with completed_col:
+        with completed_container:
             render_agent_complete(agent_key)
 
-        time.sleep(0.4)   # brief visual pause between agents
+        time.sleep(0.3)
 
     return results
