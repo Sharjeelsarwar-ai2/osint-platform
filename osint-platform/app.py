@@ -1,188 +1,285 @@
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import html
+import json
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import streamlit as st
-import time
-import json
-import re
-from datetime import datetime
 
 st.set_page_config(
-    page_title="NEXUS • OSINT Intelligence",
-    page_icon="🔮",
+    page_title="NEXUS | OSINT Intelligence",
+    page_icon="N",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-from config.settings import GROQ_API_KEY, AGENT_PROFILES, SEVERITY_COLORS, MODEL_NAME
-from agents.orchestrator import run_osint_audit
+from agents.orchestrator import render_saved_agent_workstations, run_osint_audit
+from agents.tools import TOOL_REGISTRY
+from config.settings import AGENT_PROFILES, GROQ_API_KEY, MODEL_NAME
+
+
+AGENT_ORDER = ["aria", "raven", "vulcan", "cipher", "oracle"]
 
 
 def get_css():
-    c = []
-    c.append("<style>")
-    c.append("@import url('https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,600;0,700;0,900&family=Space+Grotesk:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap');")
-    c.append(":root{--nx-bg:#030712;--nx-bg2:#0f1629;--nx-card:#111827;--nx-blue:#3b82f6;--nx-emerald:#10b981;--nx-amber:#f59e0b;--nx-rose:#f43f5e;--nx-violet:#8b5cf6;--nx-cyan:#06b6d4;--nx-t1:#f1f5f9;--nx-t2:#94a3b8;--nx-t3:#475569;--nx-border:#1e293b;}")
-    c.append(".stApp{background:var(--nx-bg)!important;color:var(--nx-t1)!important;font-family:'Space Grotesk',sans-serif!important;}")
-    c.append(".stApp::before{content:'';position:fixed;top:0;left:0;width:100vw;height:100vh;background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(59,130,246,0.12),transparent),radial-gradient(ellipse 60% 40% at 80% 110%,rgba(16,185,129,0.08),transparent),radial-gradient(ellipse 50% 50% at 10% 50%,rgba(139,92,246,0.06),transparent);pointer-events:none;z-index:0;}")
-    c.append(".stApp::after{content:'';position:fixed;top:0;left:0;width:100vw;height:100vh;background-image:linear-gradient(rgba(59,130,246,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.03) 1px,transparent 1px);background-size:50px 50px;pointer-events:none;z-index:0;animation:gridDrift 20s linear infinite;}")
-    c.append("@keyframes gridDrift{0%{transform:translate(0,0)}100%{transform:translate(50px,50px)}}")
-    c.append("header[data-testid='stHeader']{display:none!important}#MainMenu{visibility:hidden!important}footer{visibility:hidden!important}div[data-testid='stDecoration']{display:none!important}.stDeployButton{display:none!important}section[data-testid='stSidebar']{display:none!important}")
-    c.append("::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--nx-bg)}::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--nx-blue),var(--nx-emerald));border-radius:3px}")
-    c.append(".metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}")
-    c.append(".metric-card{background:linear-gradient(145deg,#111827,#0f1629);border:1px solid var(--nx-border);border-radius:16px;padding:1.2rem;position:relative;overflow:hidden;transition:all 0.4s cubic-bezier(0.4,0,0.2,1)}")
-    c.append(".metric-card:hover{transform:translateY(-4px);border-color:rgba(59,130,246,0.4);box-shadow:0 20px 40px rgba(0,0,0,0.4),0 0 30px rgba(59,130,246,0.1)}")
-    c.append(".agent-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin:1.5rem 0}")
-    c.append(".agent-mini{background:linear-gradient(160deg,#111827,#0f1629);border:1px solid var(--nx-border);border-radius:16px;padding:1.2rem 0.8rem;text-align:center;transition:all 0.4s ease;position:relative;overflow:hidden}")
-    c.append(".agent-mini:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 15px 40px rgba(0,0,0,0.4)}")
-    c.append(".nx-card{background:linear-gradient(160deg,rgba(17,24,39,0.9),rgba(15,22,41,0.7));backdrop-filter:blur(20px);border:1px solid var(--nx-border);border-radius:20px;padding:1.8rem;margin-bottom:1.5rem;position:relative;overflow:hidden;transition:all 0.4s ease}")
-    c.append(".nx-card:hover{border-color:rgba(59,130,246,0.3);box-shadow:0 8px 32px rgba(0,0,0,0.3)}")
-    c.append(".stTextInput>div>div{background:rgba(15,22,41,0.8)!important;border:1px solid var(--nx-border)!important;border-radius:12px!important;color:var(--nx-t1)!important;font-family:'Fira Code',monospace!important;font-size:1rem!important;padding:0.6rem 1rem!important;transition:all 0.3s ease!important}")
-    c.append(".stTextInput>div>div:focus-within{border-color:var(--nx-blue)!important;box-shadow:0 0 20px rgba(59,130,246,0.15)!important}")
-    c.append(".stTextInput label,.stSelectbox label{font-family:'Space Grotesk',sans-serif!important;color:var(--nx-t2)!important;font-size:0.8rem!important;letter-spacing:2px!important;text-transform:uppercase!important}")
-    c.append(".stSelectbox>div>div{background:rgba(15,22,41,0.8)!important;border:1px solid var(--nx-border)!important;border-radius:12px!important;color:var(--nx-t1)!important;font-family:'Space Grotesk',sans-serif!important}")
-    c.append("div.stButton>button{background:linear-gradient(135deg,#3b82f6,#2563eb)!important;color:white!important;font-family:'Exo 2',sans-serif!important;font-size:1.05rem!important;font-weight:700!important;letter-spacing:4px!important;text-transform:uppercase!important;padding:0.85rem 3rem!important;border:none!important;border-radius:14px!important;cursor:pointer!important;transition:all 0.4s cubic-bezier(0.4,0,0.2,1)!important;width:100%!important}")
-    c.append("div.stButton>button:hover{background:linear-gradient(135deg,#2563eb,#1d4ed8)!important;transform:translateY(-2px)!important;box-shadow:0 12px 35px rgba(59,130,246,0.35)!important}")
-    c.append(".stTabs [data-baseweb='tab-list']{gap:0.5rem;background:transparent;border-bottom:1px solid var(--nx-border)}")
-    c.append(".stTabs [data-baseweb='tab']{background:transparent!important;border:1px solid transparent!important;border-radius:10px 10px 0 0!important;color:var(--nx-t3)!important;font-family:'Space Grotesk',sans-serif!important;font-weight:600!important;font-size:0.8rem!important;letter-spacing:1.5px!important;padding:0.7rem 1.4rem!important;transition:all 0.3s ease!important}")
-    c.append(".stTabs [data-baseweb='tab']:hover{color:var(--nx-t1)!important;background:rgba(59,130,246,0.08)!important}")
-    c.append(".stTabs [aria-selected='true']{background:rgba(59,130,246,0.12)!important;border-color:var(--nx-border)!important;border-bottom-color:var(--nx-bg)!important;color:var(--nx-blue)!important}")
-    c.append(".stTabs [data-baseweb='tab-highlight']{background-color:var(--nx-blue)!important}")
-    c.append(".streamlit-expanderHeader{background:var(--nx-card)!important;border:1px solid var(--nx-border)!important;border-radius:12px!important;color:var(--nx-t1)!important;font-family:'Space Grotesk',sans-serif!important;font-weight:600!important}")
-    c.append(".streamlit-expanderContent{background:var(--nx-bg2)!important;border:1px solid var(--nx-border)!important;border-top:none!important;border-radius:0 0 12px 12px!important}")
-    c.append("@media(max-width:768px){.metric-grid{grid-template-columns:repeat(2,1fr)}.agent-grid{grid-template-columns:repeat(2,1fr)}}")
-    c.append("</style>")
-    return "\n".join(c)
+    return """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+    :root {
+      --bg: #080d14; --panel: #0d141e; --panel-raised: #111b27;
+      --border: #1d2a38; --text: #edf4fb; --muted: #91a1b2;
+      --subtle: #66788b; --accent: #47c8e8; --green: #55d6a5;
+    }
+    html, body, [class*="css"] { font-family: 'Manrope', sans-serif; }
+    .stApp { background: radial-gradient(ellipse at 50% -22%, rgba(33,94,132,.22), transparent 52%), var(--bg); color: var(--text); }
+    .stApp::before { content:''; position:fixed; inset:0; pointer-events:none; opacity:.17; z-index:0;
+      background-image:linear-gradient(rgba(112,159,191,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(112,159,191,.06) 1px,transparent 1px); background-size:44px 44px; }
+    header[data-testid='stHeader'] { background:transparent; }
+    #MainMenu, footer, div[data-testid='stDecoration'] { visibility:hidden; }
+    .block-container { max-width:1460px; padding:2rem 2.2rem 3rem; position:relative; z-index:1; }
+    h1,h2,h3,p { color:var(--text); }
+    .nx-topbar { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.2rem 0 1.2rem; border-bottom:1px solid var(--border); }
+    .nx-brand { display:flex; align-items:center; gap:.75rem; }
+    .nx-mark { width:38px; height:38px; display:grid; place-items:center; border:1px solid rgba(71,200,232,.45); border-radius:11px; color:var(--accent); font-weight:800; font-size:1.2rem; background:rgba(71,200,232,.08); box-shadow:0 0 24px rgba(71,200,232,.09); }
+    .nx-brand-name { font-size:.96rem; font-weight:800; letter-spacing:.16em; }
+    .nx-brand-sub { font:500 .61rem 'DM Mono',monospace; color:var(--subtle); letter-spacing:.08em; margin-top:2px; }
+    .nx-live { display:flex; align-items:center; gap:.55rem; font:500 .67rem 'DM Mono',monospace; color:#a8bac9; letter-spacing:.08em; }
+    .nx-live-dot, .operation-indicator { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 12px rgba(85,214,165,.6); }
+    .nx-hero { padding:2.5rem 0 1.45rem; }
+    .nx-eyebrow { color:var(--accent); font:500 .67rem 'DM Mono',monospace; letter-spacing:.19em; text-transform:uppercase; margin-bottom:.75rem; }
+    .nx-title { font-size:clamp(2.1rem,4.1vw,3.55rem); line-height:1.02; font-weight:800; letter-spacing:-.055em; margin:0; }
+    .nx-title span { color:var(--accent); }
+    .nx-subtitle { color:var(--muted); font-size:.93rem; margin:.8rem 0 0; max-width:700px; line-height:1.7; }
+    .nx-badges { display:flex; gap:.55rem; flex-wrap:wrap; margin-top:1.1rem; }
+    .nx-badge { padding:.37rem .63rem; border:1px solid var(--border); border-radius:6px; background:rgba(16,27,39,.62); color:#a6b8c8; font:500 .59rem 'DM Mono',monospace; letter-spacing:.07em; }
+    .metric-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; margin:1rem 0 1.5rem; }
+    .metric-card { background:linear-gradient(145deg,rgba(16,26,37,.96),rgba(11,18,27,.94)); border:1px solid var(--border); border-radius:11px; padding:.9rem 1rem; min-height:82px; }
+    .metric-label { color:var(--subtle); font:500 .59rem 'DM Mono',monospace; letter-spacing:.12em; text-transform:uppercase; }
+    .metric-value { color:#e5eef6; font-size:1.06rem; font-weight:700; margin-top:.42rem; }
+    .metric-value small { font:500 .66rem 'DM Mono',monospace; color:var(--muted); }
+    .section-kicker { color:var(--accent); font:500 .62rem 'DM Mono',monospace; letter-spacing:.14em; }
+    .section-title { color:var(--text); font-size:1.15rem; font-weight:700; margin:.18rem 0 .4rem; }
+    .section-copy { color:var(--muted); font-size:.79rem; line-height:1.6; }
+    .agent-roster { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.65rem; margin:1rem 0 1.55rem; }
+    .roster-card { background:rgba(13,20,30,.92); border:1px solid var(--border); border-top:2px solid var(--agent-accent); border-radius:9px; padding:.78rem .8rem; }
+    .roster-code { color:var(--agent-accent); font:500 .58rem 'DM Mono',monospace; letter-spacing:.11em; }
+    .roster-name { color:var(--text); font-weight:800; font-size:.83rem; margin:.28rem 0 .1rem; letter-spacing:.04em; }
+    .roster-role { color:var(--muted); font-size:.65rem; line-height:1.4; }
+    .stTextInput label, .stSelectbox label { color:#9dafbf!important; font:500 .64rem 'DM Mono',monospace!important; letter-spacing:.1em!important; text-transform:uppercase!important; }
+    .stTextInput input { background:#0a111a!important; border:1px solid #263746!important; border-radius:8px!important; color:var(--text)!important; min-height:44px; }
+    .stTextInput input:focus { border-color:var(--accent)!important; box-shadow:0 0 0 1px rgba(71,200,232,.2)!important; }
+    .stSelectbox [data-baseweb='select'] > div { background:#0a111a!important; border:1px solid #263746!important; border-radius:8px!important; color:var(--text)!important; min-height:44px; }
+    div.stButton > button, div[data-testid='stFormSubmitButton'] button { width:100%; min-height:44px; border-radius:8px; border:1px solid rgba(71,200,232,.55); background:linear-gradient(115deg,#137a99,#14617c); color:#f4fbff; font:700 .72rem 'DM Mono',monospace; letter-spacing:.09em; transition:all .18s ease; }
+    div.stButton > button:hover, div[data-testid='stFormSubmitButton'] button:hover { border-color:#83e3fa; background:linear-gradient(115deg,#1691b3,#177393); box-shadow:0 7px 24px rgba(27,151,184,.18); transform:translateY(-1px); }
+    .operation-banner, .operation-complete { display:flex; align-items:center; gap:.8rem; padding:.8rem 1rem; margin:1rem 0; border:1px solid rgba(71,200,232,.25); border-radius:9px; background:rgba(14,43,57,.47); }
+    .operation-banner strong, .operation-complete strong { display:block; color:#ccebf4; font:500 .65rem 'DM Mono',monospace; letter-spacing:.11em; }
+    .operation-banner span:not(.operation-count), .operation-complete span:not(.complete-mark) { color:var(--muted); font-size:.69rem; display:block; margin-top:.22rem; }
+    .operation-count { margin-left:auto; color:#9dc3d0; font:500 .58rem 'DM Mono',monospace; letter-spacing:.08em; }
+    .operation-complete { border-color:rgba(85,214,165,.28); background:rgba(17,52,43,.4); }
+    .complete-mark { color:var(--green); font-size:1.1rem; }
+    .section-heading { display:flex; align-items:end; justify-content:space-between; gap:1rem; margin:.9rem 0 .55rem; }
+    .section-heading h2 { font-size:1.08rem; margin:.2rem 0 0; }
+    .section-heading > span { color:var(--subtle); font-size:.65rem; }
+    .agent-console { --agent-accent:#47c8e8; position:relative; overflow:hidden; border:1px solid #21303e; border-radius:11px; margin:.2rem 0 .8rem; background:linear-gradient(150deg,#101923,#0b121a); }
+    .agent-console-topline { height:2px; background:linear-gradient(90deg,var(--agent-accent),transparent 72%); opacity:.9; }
+    .agent-console-header { display:flex; align-items:center; gap:.72rem; padding:.8rem .88rem .65rem; }
+    .agent-monogram { width:34px; height:34px; flex:0 0 34px; border-radius:8px; display:grid; place-items:center; color:var(--agent-accent); background:color-mix(in srgb,var(--agent-accent) 12%,#0d141e); border:1px solid color-mix(in srgb,var(--agent-accent) 35%,transparent); font:500 .67rem 'DM Mono',monospace; }
+    .agent-heading { flex:1; min-width:0; }
+    .agent-name-row { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; }
+    .agent-name-row h3 { font-size:.79rem; letter-spacing:.08em; margin:0; }
+    .agent-heading p { color:var(--muted); font-size:.63rem; margin:.12rem 0 0; }
+    .agent-duration { color:#a8bbc9; font:500 .63rem 'DM Mono',monospace; }
+    .agent-status { display:inline-flex; align-items:center; gap:.32rem; border:1px solid #304252; border-radius:20px; padding:.18rem .4rem; color:#91a4b5; font:500 .5rem 'DM Mono',monospace; letter-spacing:.05em; }
+    .agent-status i { width:5px; height:5px; border-radius:50%; background:#617587; }
+    .status-thinking .agent-status, .status-executing .agent-status, .status-deploying .agent-status { color:var(--agent-accent); border-color:color-mix(in srgb,var(--agent-accent) 38%,transparent); }
+    .status-thinking .agent-status i, .status-executing .agent-status i, .status-deploying .agent-status i { background:var(--agent-accent); box-shadow:0 0 8px var(--agent-accent); }
+    .status-complete .agent-status { color:var(--green); border-color:rgba(85,214,165,.3); }
+    .status-complete .agent-status i { background:var(--green); }
+    .status-error .agent-status { color:#ff8f8f; border-color:rgba(255,112,112,.3); }
+    .status-error .agent-status i { background:#ff7373; }
+    .agent-current { display:flex; flex-direction:column; gap:.22rem; margin:0 .88rem .62rem; padding:.5rem .6rem; border:1px solid #1b2a38; border-radius:7px; background:#0a1119; }
+    .current-label, .agent-feed-heading { color:#728598; font:500 .51rem 'DM Mono',monospace; letter-spacing:.1em; }
+    .current-text { color:#d3dee8; font-size:.64rem; line-height:1.5; overflow-wrap:anywhere; }
+    .agent-feed-heading { display:flex; justify-content:space-between; margin:0 .9rem .35rem; }
+    .agent-feed { max-height:245px; overflow-y:auto; padding:0 .65rem .65rem .88rem; scrollbar-width:thin; scrollbar-color:#314657 transparent; }
+    .agent-event { display:grid; grid-template-columns:52px 38px minmax(0,1fr); gap:.42rem; align-items:start; padding:.42rem 0; border-top:1px solid rgba(34,49,64,.58); }
+    .agent-event time { color:#677c90; font:400 .53rem 'DM Mono',monospace; padding-top:.13rem; }
+    .event-tag { display:inline-block; width:max-content; color:#83a1b4; font:500 .49rem 'DM Mono',monospace; letter-spacing:.04em; border:1px solid #263b4a; border-radius:4px; padding:.11rem .25rem; }
+    .event-thinking { color:#b4a3ff; border-color:rgba(180,163,255,.27); }
+    .event-tool_call { color:#83dcf0; border-color:rgba(71,200,232,.25); }
+    .event-tool_result { color:#77dcb6; border-color:rgba(85,214,165,.25); }
+    .event-error { color:#ff9a9a; border-color:rgba(255,112,112,.28); }
+    .event-final { color:#d2c48d; border-color:rgba(210,196,141,.25); }
+    .event-message { color:#b9c6d2; font-size:.61rem; line-height:1.48; overflow-wrap:anywhere; }
+    .agent-empty { color:#718395; padding:.45rem 0; font-size:.62rem; }
+    .report-summary { padding:1rem 1.1rem; border:1px solid rgba(85,214,165,.24); border-radius:10px; background:linear-gradient(110deg,rgba(14,50,42,.5),rgba(12,28,37,.6)); margin:.65rem 0 1rem; }
+    .report-summary-title { color:#bdebd8; font-size:.91rem; font-weight:800; }
+    .report-summary-meta { color:#93a9b7; font:400 .61rem 'DM Mono',monospace; margin-top:.35rem; }
+    .risk-panel { display:flex; align-items:center; gap:1rem; padding:.88rem 1rem; border:1px solid var(--border); border-radius:10px; background:rgba(13,20,30,.9); margin:.6rem 0 1rem; }
+    .risk-number { color:var(--risk-color); font-size:1.65rem; line-height:1; font-weight:800; min-width:50px; }
+    .risk-copy strong { display:block; color:#dce7ef; font-size:.75rem; }
+    .risk-copy span { display:block; color:var(--muted); font-size:.63rem; margin-top:.18rem; }
+    .stTabs [data-baseweb='tab-list'] { gap:.3rem; border-bottom:1px solid var(--border); }
+    .stTabs [data-baseweb='tab'] { color:#8194a6!important; font:600 .67rem 'DM Mono',monospace!important; padding:.62rem .75rem!important; }
+    .stTabs [aria-selected='true'] { color:var(--accent)!important; }
+    .stDownloadButton button { border-radius:7px!important; background:#101a24!important; color:#c5d3df!important; border:1px solid #2a3c4c!important; font:500 .67rem 'DM Mono',monospace!important; }
+    .nx-footer { border-top:1px solid var(--border); margin-top:2.6rem; padding-top:.9rem; display:flex; justify-content:space-between; color:#586b7d; font:400 .56rem 'DM Mono',monospace; letter-spacing:.07em; }
+    @media(max-width:850px) { .block-container{padding:1.1rem 1rem 2rem}.metric-row{grid-template-columns:repeat(2,1fr)}.agent-roster{grid-template-columns:repeat(2,1fr)}.section-heading{align-items:start;flex-direction:column} }
+    @media(max-width:520px) { .nx-live{font-size:.55rem}.nx-hero{padding-top:1.7rem}.agent-roster{grid-template-columns:1fr 1fr}.operation-count{display:none}.nx-footer{gap:.6rem;flex-direction:column} }
+    </style>
+    """
 
 
 def render_header():
     st.markdown(
-        '<div style="position:relative;text-align:center;padding:2rem 1rem 1.5rem;margin-bottom:0.5rem;">'
-        '<div style="position:absolute;top:50%;left:50%;width:500px;height:500px;'
-        'transform:translate(-50%,-50%);'
-        'background:radial-gradient(circle,rgba(59,130,246,0.06),transparent 65%);'
-        'pointer-events:none;"></div>'
-        '<div style="font-family:Exo 2,sans-serif;font-size:3.2rem;font-weight:900;'
-        'letter-spacing:12px;'
-        'background:linear-gradient(135deg,#3b82f6,#10b981,#f59e0b);'
-        '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
-        'background-clip:text;position:relative;">'
-        '🔮 NEXUS'
-        '<div style="position:absolute;bottom:-2px;left:15%;width:70%;height:2px;'
-        'background:linear-gradient(90deg,transparent,#3b82f6,#10b981,transparent);">'
-        '</div></div>'
-        '<div style="font-family:Space Grotesk,sans-serif;font-size:0.8rem;'
-        'color:#94a3b8;letter-spacing:6px;text-transform:uppercase;margin-top:0.6rem;">'
-        'AI-Powered OSINT &amp; Threat Intelligence Platform</div>'
-        '<div style="display:inline-block;margin-top:0.7rem;padding:3px 14px;'
-        'background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.25);'
-        'border-radius:20px;font-family:Fira Code,monospace;font-size:0.6rem;'
-        'color:#3b82f6;letter-spacing:2px;">'
-        '<span style="display:inline-block;width:6px;height:6px;background:#10b981;'
-        'border-radius:50%;margin-right:6px;box-shadow:0 0 6px #10b981;"></span>'
-        'v2.0 • MULTI-AGENT • LIVE RECON</div></div>',
+        '<div class="nx-topbar"><div class="nx-brand"><div class="nx-mark">N</div>'
+        '<div><div class="nx-brand-name">NEXUS</div><div class="nx-brand-sub">INTELLIGENCE OPERATIONS</div></div></div>'
+        '<div class="nx-live"><i class="nx-live-dot"></i> SYSTEM READY <span style="color:#425465">/</span> '
+        + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC") + '</div></div>'
+        '<div class="nx-hero"><div class="nx-eyebrow">Open-source intelligence · multi-agent analysis</div>'
+        '<h1 class="nx-title">Know the <span>exposure.</span><br>Make the next move.</h1>'
+        '<p class="nx-subtitle">A coordinated intelligence workspace for domain, threat, attack-surface and email-security research. '
+        'Each specialist reports its live activity and returns a reviewable evidence summary.</p>'
+        '<div class="nx-badges"><span class="nx-badge">PASSIVE RECONNAISSANCE</span>'
+        '<span class="nx-badge">5 SPECIALIST AGENTS</span><span class="nx-badge">GROQ · ' + _escape(MODEL_NAME) + '</span></div></div>',
         unsafe_allow_html=True,
     )
+
+
+def _escape(value):
+    return html.escape(str(value), quote=True)
 
 
 def render_metrics():
-    now = datetime.now().strftime("%H:%M:%S")
-    st.markdown(
-        '<div class="metric-grid">'
-        '<div class="metric-card" style="border-top:3px solid #3b82f6;">'
-        '<div style="font-size:1.8rem;">🤖</div>'
-        '<div style="font-family:Exo 2,sans-serif;font-size:1.8rem;font-weight:900;">5</div>'
-        '<div style="font-size:0.72rem;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;">Active Agents</div></div>'
-        '<div class="metric-card" style="border-top:3px solid #10b981;">'
-        '<div style="font-size:1.8rem;">🔧</div>'
-        '<div style="font-family:Exo 2,sans-serif;font-size:1.8rem;font-weight:900;">12</div>'
-        '<div style="font-size:0.72rem;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;">OSINT Tools</div></div>'
-        '<div class="metric-card" style="border-top:3px solid #f59e0b;">'
-        '<div style="font-size:1.8rem;">⚡</div>'
-        '<div style="font-family:Exo 2,sans-serif;font-size:1rem;font-weight:900;">LLAMA 3.3</div>'
-        '<div style="font-size:0.72rem;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;">LLM Engine</div></div>'
-        '<div class="metric-card" style="border-top:3px solid #8b5cf6;">'
-        '<div style="font-size:1.8rem;">🕐</div>'
-        '<div style="font-family:Exo 2,sans-serif;font-size:1.1rem;font-weight:900;">' + now + '</div>'
-        '<div style="font-size:0.72rem;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;">Session Time</div></div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    cards = [
+        ("SPECIALIST AGENTS", str(len(AGENT_PROFILES)), "coordinated roles"),
+        ("AVAILABLE OSINT TOOLS", str(len(TOOL_REGISTRY)), "passive checks"),
+        ("REPORT FORMAT", "Evidence-led", "source-aware findings"),
+        ("MODEL", MODEL_NAME.split("/")[-1], "Groq inference"),
+    ]
+    markup = '<div class="metric-row">'
+    for label, value, detail in cards:
+        markup += (
+            '<div class="metric-card"><div class="metric-label">' + _escape(label) + '</div>'
+            '<div class="metric-value">' + _escape(value) + ' <small>' + _escape(detail) + '</small></div></div>'
+        )
+    st.markdown(markup + '</div>', unsafe_allow_html=True)
 
 
 def render_agent_showcase():
-    cards = ""
-    for key, a in AGENT_PROFILES.items():
-        c = a["color"]
-        cards += (
-            '<div class="agent-mini" style="border-color:' + c + '20;">'
-            '<div style="position:absolute;bottom:0;left:0;width:100%;height:3px;'
-            'background:linear-gradient(90deg,transparent,' + c + ',transparent);"></div>'
-            '<img src="' + a["avatar_url"] + '" style="width:56px;height:56px;'
-            'border-radius:50%;border:2px solid ' + c + ';box-shadow:0 0 15px ' + c + '30;'
-            'background:#0f1629;margin:0 auto 0.6rem;display:block;"/>'
-            '<div style="font-family:Exo 2,sans-serif;font-size:0.8rem;font-weight:700;'
-            'letter-spacing:2px;color:' + c + ';">' + a["icon"] + " " + a["name"] + '</div>'
-            '<div style="font-family:Space Grotesk,sans-serif;font-size:0.6rem;'
-            'color:#94a3b8;letter-spacing:1px;">' + a["role"] + '</div></div>'
+    markup = '<div class="agent-roster">'
+    for index, key in enumerate(AGENT_ORDER, start=1):
+        agent = AGENT_PROFILES[key]
+        markup += (
+            '<div class="roster-card" style="--agent-accent:' + _escape(agent["color"]) + '">'
+            '<div class="roster-code">SPECIALIST / ' + f'{index:02d}' + '</div>'
+            '<div class="roster-name">' + _escape(agent["name"]) + '</div>'
+            '<div class="roster-role">' + _escape(agent["role"]) + '</div></div>'
         )
-    st.markdown('<div class="agent-grid">' + cards + '</div>', unsafe_allow_html=True)
-
-
-def render_risk_gauge(score):
-    if score >= 80:
-        color, label = "#f43f5e", "CRITICAL"
-    elif score >= 60:
-        color, label = "#f59e0b", "HIGH"
-    elif score >= 40:
-        color, label = "#3b82f6", "MEDIUM"
-    elif score >= 20:
-        color, label = "#10b981", "LOW"
-    else:
-        color, label = "#94a3b8", "MINIMAL"
-    deg = score * 3.6
-    st.markdown(
-        '<div style="display:flex;justify-content:center;align-items:center;padding:2rem;">'
-        '<div style="width:200px;height:200px;border-radius:50%;position:relative;'
-        'display:flex;align-items:center;justify-content:center;'
-        'background:conic-gradient(' + color + ' 0deg,' + color + '80 ' + str(deg) + 'deg,'
-        '#1e293b ' + str(deg) + 'deg,#1e293b 360deg);'
-        'box-shadow:0 0 40px ' + color + '30,inset 0 0 40px rgba(3,7,18,0.8);">'
-        '<div style="position:absolute;width:160px;height:160px;'
-        'background:#030712;border-radius:50%;"></div>'
-        '<div style="font-family:Exo 2,sans-serif;font-size:3.2rem;font-weight:900;'
-        'color:' + color + ';position:relative;z-index:2;">' + str(score) + '</div>'
-        '<div style="font-family:Space Grotesk,sans-serif;font-size:0.7rem;'
-        'color:#94a3b8;letter-spacing:3px;text-transform:uppercase;'
-        'position:absolute;bottom:45px;z-index:2;">' + label + ' RISK</div>'
-        '</div></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(markup + '</div>', unsafe_allow_html=True)
 
 
 def extract_risk_score(text):
-    for p in [r'[Rr]isk\s*[Ss]core[:\s]*(\d{1,3})', r'(\d{1,3})\s*/\s*100',
-              r'(\d{1,3})\s*out\s*of\s*100', r'[Ss]core[:\s]*(\d{1,3})']:
-        m = re.search(p, text)
-        if m and 0 <= int(m.group(1)) <= 100:
-            return int(m.group(1))
-    return 45
+    for pattern in (
+        r"[Rr]isk\s*[Ss]core[:\s]*(\d{1,3})",
+        r"(\d{1,3})\s*/\s*100",
+        r"(\d{1,3})\s*out\s*of\s*100",
+        r"[Ss]core[:\s]*(\d{1,3})",
+    ):
+        match = re.search(pattern, text or "")
+        if match and 0 <= int(match.group(1)) <= 100:
+            return int(match.group(1))
+    return None
 
 
-def render_agent_findings(agent_key, content):
-    a = AGENT_PROFILES[agent_key]
-    c = a["color"]
+def risk_level(score):
+    if score is None:
+        return "Not reported", "#91a1b2"
+    if score >= 80:
+        return "Critical", "#ff7373"
+    if score >= 60:
+        return "High", "#ffae69"
+    if score >= 40:
+        return "Moderate", "#f1cd72"
+    if score >= 20:
+        return "Low", "#66d5bb"
+    return "Minimal", "#91a1b2"
+
+
+def get_api_key():
+    key = GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
+    if key:
+        return key
+    try:
+        return st.secrets.get("GROQ_API_KEY", "")
+    except Exception:
+        return ""
+
+
+def render_report(report):
+    results = report["results"]
+    target = report["target"]
+    target_type = report["target_type"]
+    elapsed = report["elapsed"]
+    oracle_text = str(results.get("oracle", ""))
+    score = extract_risk_score(oracle_text)
+    level, color = risk_level(score)
+    available = sum(bool(str(results.get(key, "")).strip()) for key in AGENT_ORDER)
+
     st.markdown(
-        '<div class="nx-card" style="border-left:4px solid ' + c + ';">'
-        '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;">'
-        '<img src="' + a["avatar_url"] + '" style="width:36px;height:36px;border-radius:50%;'
-        'border:2px solid ' + c + ';background:#0f1629;"/>'
-        '<span style="font-family:Exo 2,sans-serif;font-size:1.1rem;font-weight:700;'
-        'letter-spacing:3px;color:' + c + ';">' + a["icon"] + " " + a["name"]
-        + ' — ' + a["role"] + '</span></div></div>',
+        '<div class="section-heading"><div><span class="section-kicker">02 / FINDINGS</span>'
+        '<h2>Intelligence report</h2></div><span>Review individual agent conclusions below</span></div>',
         unsafe_allow_html=True,
     )
-    st.markdown(content)
+    st.markdown(
+        '<div class="report-summary"><div class="report-summary-title">Analysis complete · ' + _escape(target) + '</div>'
+        '<div class="report-summary-meta">' + _escape(target_type) + ' · ' + str(available) + '/5 agents returned findings · '
+        + f'{elapsed:.1f}s elapsed' + ' · ' + _escape(datetime.fromisoformat(report["timestamp"]).strftime("%d %b %Y, %H:%M UTC"))
+        + '</div></div>', unsafe_allow_html=True,
+    )
+    if score is None:
+        risk_value = "—"
+        risk_detail = "The synthesis agent did not report a numeric score. Review findings below."
+    else:
+        risk_value = str(score)
+        risk_detail = f"{level} exposure · score reported by the synthesis agent on a 0–100 scale."
+    st.markdown(
+        '<div class="risk-panel" style="--risk-color:' + color + '"><div class="risk-number">' + risk_value
+        + '<span style="font-size:.63rem;color:#8193a2">/100</span></div><div class="risk-copy"><strong>Reported risk assessment · '
+        + _escape(level) + '</strong><span>' + _escape(risk_detail) + '</span></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    tabs = st.tabs([AGENT_PROFILES[key]["name"] for key in AGENT_ORDER])
+    for tab, key in zip(tabs, AGENT_ORDER):
+        with tab:
+            content = str(results.get(key, "")).strip()
+            if not content:
+                st.info("No findings were returned by this specialist.")
+            else:
+                st.markdown(content)
+
+    export = {
+        "target": target,
+        "target_type": target_type,
+        "timestamp": report["timestamp"],
+        "risk_score": score,
+        "elapsed_seconds": elapsed,
+        "model": MODEL_NAME,
+        "findings": results,
+    }
+    st.download_button(
+        "Download full report · JSON",
+        data=json.dumps(export, indent=2, ensure_ascii=False, default=str),
+        file_name="nexus_" + re.sub(r"[^A-Za-z0-9_-]+", "_", target).strip("_") + ".json",
+        mime="application/json",
+        use_container_width=True,
+    )
 
 
 def main():
@@ -191,102 +288,61 @@ def main():
     render_metrics()
 
     st.markdown(
-        '<div style="font-family:Exo 2,sans-serif;font-size:0.85rem;font-weight:700;'
-        'letter-spacing:3px;color:#94a3b8;text-transform:uppercase;'
-        'margin-bottom:0.5rem;text-align:center;">'
-        '<span style="display:inline-block;width:6px;height:6px;background:#3b82f6;'
-        'border-radius:50%;margin-right:8px;box-shadow:0 0 6px #3b82f6;"></span>'
-        'AGENT SQUAD — READY FOR DEPLOYMENT</div>',
+        '<div class="section-heading"><div><span class="section-kicker">01 / TEAM</span>'
+        '<h2>Five focused specialists</h2></div><span>One target · coordinated analysis</span></div>',
         unsafe_allow_html=True,
     )
     render_agent_showcase()
 
     st.markdown(
-        '<div style="font-family:Exo 2,sans-serif;font-size:1rem;font-weight:700;'
-        'letter-spacing:3px;color:#3b82f6;margin:1.5rem 0 0.8rem;">'
-        '🎯 TARGET ACQUISITION</div>',
+        '<div class="section-heading"><div><span class="section-kicker">START AN OPERATION</span>'
+        '<h2>Define an authorized target</h2></div><span>Use only targets you are authorized to assess.</span></div>',
         unsafe_allow_html=True,
     )
+    with st.container(border=True):
+        with st.form("nexus_target_form"):
+            col_target, col_type, col_button = st.columns([5, 1.6, 1.7])
+            with col_target:
+                target = st.text_input("Target", placeholder="example.com, 203.0.113.10, or Acme Corp")
+            with col_type:
+                target_type = st.selectbox("Target type", ["Domain", "IP Address", "Company"])
+            with col_button:
+                launch = st.form_submit_button("Run intelligence scan", use_container_width=True)
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        target = st.text_input("T", placeholder="e.g. example.com, 192.168.1.1, Acme Corp", label_visibility="collapsed")
-    with col2:
-        target_type = st.selectbox("Y", ["Domain", "IP Address", "Company"], label_visibility="collapsed")
+    if not get_api_key():
+        st.warning('Groq API key required. Set GROQ_API_KEY in the environment or in Streamlit secrets to enable agent runs.')
 
-    launch = st.button("🚀  DEPLOY AGENTS  —  BEGIN RECONNAISSANCE", use_container_width=True)
+    activity_rendered = False
+    if launch:
+        if not target.strip():
+            st.error("Enter a domain, IP address, or company name before starting the scan.")
+        elif not get_api_key():
+            st.error("The scan was not started because no Groq API key is configured.")
+        else:
+            activity_rendered = True
+            started = time.time()
+            try:
+                results = run_osint_audit(target.strip(), target_type.lower())
+                st.session_state["nexus_latest_report"] = {
+                    "target": target.strip(),
+                    "target_type": target_type,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "elapsed": time.time() - started,
+                    "results": results,
+                }
+            except Exception as exc:
+                st.error(f"The scan could not be completed: {type(exc).__name__}: {exc}")
 
-    api_key = GROQ_API_KEY or st.secrets.get("GROQ_API_KEY", "")
-    if not api_key:
-        st.markdown(
-            '<div style="background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.25);'
-            'border-radius:12px;padding:1rem 1.2rem;margin-top:1rem;'
-            'font-family:Space Grotesk,sans-serif;color:#f1f5f9;">'
-            '<span style="color:#f43f5e;font-weight:700;">⚠ GROQ API KEY REQUIRED</span><br/>'
-            '<span style="font-size:0.82rem;color:#94a3b8;">Add your key in Streamlit Cloud → '
-            'Settings → Secrets: <code style="background:#1e293b;padding:2px 8px;'
-            'border-radius:4px;font-family:Fira Code,monospace;font-size:0.75rem;">'
-            'GROQ_API_KEY = "gsk_your_key"</code></span></div>',
-            unsafe_allow_html=True,
-        )
-        return
+    if not activity_rendered:
+        render_saved_agent_workstations()
 
-    if launch and target.strip():
-        start_time = time.time()
-        results = run_osint_audit(target.strip(), target_type.lower())
-        elapsed = round(time.time() - start_time, 1)
-
-        st.markdown(
-            '<div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),'
-            'rgba(59,130,246,0.1));border:1px solid rgba(16,185,129,0.3);'
-            'border-radius:16px;padding:1.2rem 1.5rem;margin:1.5rem 0;text-align:center;">'
-            '<span style="font-family:Exo 2,sans-serif;font-size:1.3rem;font-weight:900;'
-            'color:#10b981;letter-spacing:3px;">✅ RECONNAISSANCE COMPLETE</span><br/>'
-            '<span style="font-family:Fira Code,monospace;font-size:0.8rem;color:#94a3b8;">'
-            '5 agents deployed • 12 tools executed • ' + str(elapsed)
-            + 's elapsed • Target: ' + target + '</span></div>',
-            unsafe_allow_html=True,
-        )
-
-        oracle_text = results.get("oracle", "")
-        render_risk_gauge(extract_risk_score(oracle_text))
-
-        tab_labels = [AGENT_PROFILES[k]["icon"] + " " + AGENT_PROFILES[k]["name"]
-                      for k in ["aria", "raven", "vulcan", "cipher", "oracle"]]
-        tabs = st.tabs(tab_labels)
-        for tab, key in zip(tabs, ["aria", "raven", "vulcan", "cipher", "oracle"]):
-            with tab:
-                render_agent_findings(key, results.get(key, "_No data._"))
-
-        st.markdown("---")
-        export = {"target": target, "type": target_type,
-                  "timestamp": datetime.now().isoformat(),
-                  "risk_score": extract_risk_score(oracle_text),
-                  "elapsed": elapsed, "model": MODEL_NAME, "findings": results}
-        st.download_button(
-            "⬇  Download Full Report (JSON)",
-            data=json.dumps(export, indent=2, default=str),
-            file_name="nexus_" + target.replace(".", "_") + ".json",
-            mime="application/json",
-            use_container_width=True,
-        )
-
-    elif launch:
-        st.markdown(
-            '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);'
-            'border-radius:12px;padding:0.8rem 1.2rem;margin-top:1rem;'
-            'font-family:Space Grotesk,sans-serif;color:#f59e0b;font-size:0.85rem;">'
-            '⚠ Please enter a target.</div>',
-            unsafe_allow_html=True,
-        )
+    latest_report = st.session_state.get("nexus_latest_report")
+    if latest_report:
+        render_report(latest_report)
 
     st.markdown(
-        '<div style="text-align:center;margin-top:3rem;padding:1.5rem;'
-        'border-top:1px solid #1e293b;">'
-        '<span style="font-family:Fira Code,monospace;font-size:0.65rem;'
-        'color:#475569;letter-spacing:2px;">'
-        'NEXUS COMMAND v2.0 • Multi-Agent OSINT • Groq LLM • Hackathon Edition'
-        '</span></div>',
+        '<div class="nx-footer"><span>NEXUS INTELLIGENCE OPERATIONS</span>'
+        '<span>PASSIVE OSINT · VERIFY SOURCES BEFORE ACTION</span></div>',
         unsafe_allow_html=True,
     )
 

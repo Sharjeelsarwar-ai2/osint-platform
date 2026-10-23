@@ -1,424 +1,285 @@
-import sys, os, logging
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-logging.getLogger("streamlit").setLevel(logging.ERROR)
-logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
-
-import streamlit as st
-import streamlit.components.v1 as components
+import html
+import logging
+import sys
 import time
 from datetime import datetime
+from pathlib import Path
+
+import streamlit as st
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from agents.tools import GROQ_TOOL_DEFINITIONS, execute_tool
 from config.settings import AGENT_PROFILES
 from utils.groq_client import run_agent_with_tools
-from agents.tools import GROQ_TOOL_DEFINITIONS, execute_tool
 
 
-# ─────────────────────────────────────────────────────────
-#  CSS shared across all iframe components
-# ─────────────────────────────────────────────────────────
-def _base_css():
-    return (
-        "@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@600;700;900"
-        "&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600"
-        "&display=swap');"
-        "*{box-sizing:border-box;margin:0;padding:0;}"
-        "html,body{background:transparent;overflow:hidden;color:#f1f5f9;}"
-        "@keyframes spin{to{transform:rotate(360deg)}}"
-        "@keyframes afloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}"
-        "@keyframes dotp{0%,80%,100%{transform:scale(0.4);opacity:0.3}40%{transform:scale(1.2);opacity:1}}"
-        "@keyframes sglow{0%,100%{opacity:1;box-shadow:0 0 8px #10b981}50%{opacity:0.4;box-shadow:0 0 2px #10b981}}"
-        "@keyframes scanm{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}"
-        "@keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}"
-        "@keyframes gradientShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}"
-        "@keyframes hologram{0%,100%{opacity:0.7}50%{opacity:1}}"
-        "@keyframes pulse3d{0%,100%{transform:translateZ(0) scale(1)}50%{transform:translateZ(20px) scale(1.03)}}"
-    )
+PIPELINE = [
+    ("aria", "domain_recon", 3),
+    ("raven", "threat_intel", 2),
+    ("vulcan", "attack_surface", 2),
+    ("cipher", "email_osint", 1),
+    ("oracle", "final_report", 1),
+]
+
+STATUS_LABELS = {
+    "queued": "QUEUED",
+    "deploying": "INITIALIZING",
+    "thinking": "ANALYZING",
+    "executing": "RUNNING TOOL",
+    "complete": "COMPLETE",
+    "error": "NEEDS ATTENTION",
+}
+
+EVENT_LABELS = {
+    "system": "SYS",
+    "thinking": "LLM",
+    "tool_call": "EXEC",
+    "tool_result": "DATA",
+    "final": "DONE",
+    "error": "ERR",
+}
 
 
-def _render(html, height):
-    try:
-        st.html(html, height=height, scrolling=False)
-    except (AttributeError, TypeError):
-        components.html(html, height=height, scrolling=False)
-
-
-# ─────────────────────────────────────────────────────────
-#  AGENT WORKSTATION — Live activity window (3D card)
-# ─────────────────────────────────────────────────────────
-def render_agent_workstation(agent_key, status="deploying", activity_log=None, elapsed=None):
-    """
-    Full agent workstation with live activity feed.
-    status: 'deploying' | 'thinking' | 'executing' | 'complete'
-    activity_log: list of dicts {time, type, text, color}
-    """
-    a = AGENT_PROFILES[agent_key]
-    c = a["color"]
-    activity_log = activity_log or []
-
-    # Status badge config
-    status_cfg = {
-        "deploying":  ("🚀 DEPLOYING",  c,          "spin 2s linear infinite"),
-        "thinking":   ("🧠 THINKING",   "#8b5cf6",  "pulse3d 1.5s ease-in-out infinite"),
-        "executing":  ("⚙ EXECUTING",   c,          "spin 1.5s linear infinite"),
-        "complete":   ("✓ COMPLETE",    "#10b981",  "none"),
+def _save_agent_state(agent_key, status, activity_log, elapsed=None):
+    saved = dict(st.session_state.get("nexus_latest_activity", {}))
+    saved[agent_key] = {
+        "status": status,
+        "activity_log": list(activity_log),
+        "elapsed": elapsed,
     }
-    status_text, status_color, ring_anim = status_cfg.get(status, status_cfg["deploying"])
+    st.session_state["nexus_latest_activity"] = saved
 
-    # Build activity feed HTML (last 10 events)
-    feed_html = ""
-    for i, e in enumerate(activity_log[-10:]):
-        feed_html += (
-            '<div style="display:flex;align-items:flex-start;gap:0.6rem;'
-            'padding:0.4rem 0.6rem;margin-bottom:0.25rem;'
-            'background:linear-gradient(90deg,' + e["color"] + '12,transparent);'
-            'border-left:2px solid ' + e["color"] + ';'
-            'border-radius:0 6px 6px 0;'
-            'animation:slideIn 0.4s ease-out;">'
-            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6rem;'
-            'color:#64748b;flex-shrink:0;min-width:52px;">' + e["time"] + '</span>'
-            '<span style="font-size:0.9rem;flex-shrink:0;">' + e["icon"] + '</span>'
-            '<span style="font-family:Space Grotesk,sans-serif;font-size:0.72rem;'
-            'color:#cbd5e1;line-height:1.4;word-break:break-word;">' + e["text"] + '</span>'
+
+def render_saved_agent_workstations():
+    """Re-display the last run's agent windows after ordinary Streamlit reruns."""
+    saved = st.session_state.get("nexus_latest_activity", {})
+    if not saved:
+        return
+    st.markdown(
+        '<div class="section-heading"><div><span>01 / LAST OPERATION</span>'
+        '<h2>Agent workstations</h2></div><span>Activity history is retained for this session</span></div>',
+        unsafe_allow_html=True,
+    )
+    left_column, right_column = st.columns(2, gap="medium")
+    for index, (agent_key, _, _) in enumerate(PIPELINE):
+        record = saved.get(agent_key, {})
+        column = left_column if index % 2 == 0 else right_column
+        column.markdown(
+            render_agent_workstation(
+                agent_key,
+                record.get("status", "queued"),
+                record.get("activity_log", []),
+                record.get("elapsed"),
+            ),
+            unsafe_allow_html=True,
+        )
+
+
+def _escape(value):
+    return html.escape(str(value), quote=True)
+
+
+def _format_tool_call(name, args):
+    args = args if isinstance(args, dict) else {}
+    for key in ("domain", "url", "ip_address", "query", "company"):
+        if args.get(key):
+            return f"{name} · {str(args[key])[:72]}"
+    if args:
+        first_key, first_value = next(iter(args.items()))
+        return f"{name} · {first_key}: {str(first_value)[:60]}"
+    return f"{name} · no arguments"
+
+
+def render_agent_workstation(agent_key, status="queued", activity_log=None, elapsed=None):
+    """Render one persistent agent console and its complete scrollable event history."""
+    agent = AGENT_PROFILES[agent_key]
+    accent = agent.get("color", "#43c6e8")
+    activity_log = activity_log or []
+    status_label = STATUS_LABELS.get(status, "INITIALIZING")
+    latest_activity = activity_log[-1]["text"] if activity_log else "Waiting for the orchestration queue."
+    elapsed_text = f"{elapsed:.1f}s" if elapsed is not None else "—"
+
+    events = []
+    for event in activity_log:
+        event_type = event.get("type", "system")
+        event_label = EVENT_LABELS.get(event_type, "LOG")
+        events.append(
+            '<div class="agent-event">'
+            '<time>' + _escape(event.get("time", "")) + '</time>'
+            '<span class="event-tag event-' + _escape(event_type) + '">' + _escape(event_label) + '</span>'
+            '<span class="event-message">' + _escape(event.get("text", "")) + '</span>'
             '</div>'
         )
 
-    if not feed_html:
-        feed_html = (
-            '<div style="text-align:center;padding:1.5rem;'
-            'font-family:JetBrains Mono,monospace;font-size:0.7rem;'
-            'color:#475569;font-style:italic;">'
-            '> Initializing agent environment…</div>'
+    if not events:
+        events.append(
+            '<div class="agent-empty">No activity yet. This specialist is standing by.</div>'
         )
 
-    elapsed_html = ""
-    if elapsed is not None:
-        elapsed_html = (
-            '<span style="font-family:JetBrains Mono,monospace;font-size:0.65rem;'
-            'color:#64748b;margin-left:auto;">⏱ ' + str(round(elapsed, 1)) + 's</span>'
-        )
-
-    css = _base_css()
-    html = (
-        '<style>' + css + '</style>'
-
-        # OUTER 3D CARD
-        '<div style="'
-        'background:linear-gradient(135deg,rgba(17,24,39,0.95),rgba(15,22,41,0.85));'
-        'border:1px solid ' + c + '35;'
-        'border-radius:20px;'
-        'padding:1.3rem;'
-        'position:relative;'
-        'overflow:hidden;'
-        'box-shadow:'
-        '0 20px 60px rgba(0,0,0,0.5),'
-        '0 0 40px ' + c + '15,'
-        'inset 0 1px 0 rgba(255,255,255,0.06),'
-        'inset 0 -1px 0 rgba(0,0,0,0.3);'
-        'transform:perspective(1000px) rotateX(0.5deg);'
-        'font-family:Space Grotesk,sans-serif;">'
-
-        # Scanner line
-        '<div style="position:absolute;top:0;left:0;width:100%;height:2px;'
-        'background:linear-gradient(90deg,transparent,' + c + ',' + c + ',transparent);'
-        'background-size:200% 100%;'
-        'animation:scanm 3s linear infinite,gradientShift 3s ease infinite;'
-        'box-shadow:0 0 10px ' + c + ';"></div>'
-
-        # Holographic corner accents
-        '<div style="position:absolute;top:8px;right:8px;width:30px;height:30px;'
-        'border-top:2px solid ' + c + '60;border-right:2px solid ' + c + '60;'
-        'border-radius:0 8px 0 0;animation:hologram 2s ease-in-out infinite;"></div>'
-        '<div style="position:absolute;bottom:8px;left:8px;width:30px;height:30px;'
-        'border-bottom:2px solid ' + c + '60;border-left:2px solid ' + c + '60;'
-        'border-radius:0 0 0 8px;animation:hologram 2s ease-in-out infinite;"></div>'
-
-        # ─ HEADER ─
-        '<div style="display:flex;align-items:center;gap:1.2rem;margin-bottom:1rem;'
-        'padding-bottom:0.8rem;border-bottom:1px solid ' + c + '20;">'
-
-        # Avatar with rotating ring
-        '<div style="position:relative;width:76px;height:76px;flex-shrink:0;">'
-        '<div style="position:absolute;top:-6px;left:-6px;width:88px;height:88px;'
-        'border:2px solid transparent;'
-        'border-top-color:' + c + ';border-right-color:' + c + '70;'
-        'border-radius:50%;animation:' + ring_anim + ';"></div>'
-        '<div style="position:absolute;top:0;left:0;width:76px;height:76px;'
-        'border-radius:50%;background:radial-gradient(circle,' + c + '30,transparent);'
-        'filter:blur(8px);"></div>'
-        '<img src="' + a["avatar_url"] + '" style="position:relative;z-index:1;'
-        'width:76px;height:76px;border-radius:50%;'
-        'border:2px solid ' + c + ';background:#0a0e17;'
-        'box-shadow:0 0 25px ' + c + '50,inset 0 0 20px rgba(0,0,0,0.5);'
-        'animation:afloat 3s ease-in-out infinite;"/>'
-        '<div style="position:absolute;bottom:0;right:0;width:16px;height:16px;'
-        'background:' + status_color + ';border:3px solid #030712;border-radius:50%;'
-        'z-index:3;animation:sglow 1s ease-in-out infinite;"></div></div>'
-
-        # Agent name + status
-        '<div style="flex:1;min-width:0;">'
-        '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.2rem;">'
-        '<span style="font-size:1.2rem;">' + a["icon"] + '</span>'
-        '<span style="font-family:Exo 2,sans-serif;font-size:1.1rem;font-weight:900;'
-        'color:' + c + ';letter-spacing:4px;'
-        'text-shadow:0 0 15px ' + c + '60,0 2px 4px rgba(0,0,0,0.5);">'
-        + a["name"] + '</span>'
-        + elapsed_html +
+    return (
+        '<article class="agent-console status-' + _escape(status) + '" style="--agent-accent:' + _escape(accent) + '">'
+        '<div class="agent-console-topline"></div>'
+        '<header class="agent-console-header">'
+        '<div class="agent-monogram">' + _escape(agent.get("name", agent_key)[:2]) + '</div>'
+        '<div class="agent-heading">'
+        '<div class="agent-name-row"><h3>' + _escape(agent.get("name", agent_key)) + '</h3>'
+        '<span class="agent-status"><i></i>' + _escape(status_label) + '</span></div>'
+        '<p>' + _escape(agent.get("role", "Specialist agent")) + '</p>'
         '</div>'
-        '<div style="font-family:Space Grotesk,sans-serif;font-size:0.7rem;'
-        'color:#94a3b8;letter-spacing:2px;text-transform:uppercase;margin-bottom:0.4rem;">'
-        + a["role"] + '</div>'
-        '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">'
-        '<span style="display:inline-flex;align-items:center;gap:0.3rem;'
-        'padding:3px 10px;background:' + status_color + '18;'
-        'border:1px solid ' + status_color + ';border-radius:10px;'
-        'font-family:JetBrains Mono,monospace;font-size:0.6rem;'
-        'color:' + status_color + ';letter-spacing:2px;font-weight:700;'
-        'box-shadow:0 0 10px ' + status_color + '30;">'
-        + status_text + '</span>'
-        '<span style="font-family:JetBrains Mono,monospace;font-size:0.65rem;'
-        'color:#64748b;font-style:italic;">' + a["catchphrase"] + '</span>'
-        '</div></div></div>'
-
-        # ─ LIVE ACTIVITY FEED ─
-        '<div style="background:rgba(3,7,18,0.7);border:1px solid ' + c + '15;'
-        'border-radius:12px;padding:0.6rem;max-height:220px;overflow-y:auto;'
-        'box-shadow:inset 0 2px 8px rgba(0,0,0,0.4);">'
-
-        # Feed header
-        '<div style="display:flex;align-items:center;gap:0.4rem;'
-        'padding:0 0.3rem 0.5rem;margin-bottom:0.5rem;'
-        'border-bottom:1px dashed ' + c + '20;">'
-        '<span style="width:6px;height:6px;background:#10b981;border-radius:50%;'
-        'animation:sglow 1.5s ease-in-out infinite;"></span>'
-        '<span style="font-family:JetBrains Mono,monospace;font-size:0.6rem;'
-        'color:#64748b;letter-spacing:2px;text-transform:uppercase;">'
-        'LIVE ACTIVITY STREAM</span>'
-        '<span style="margin-left:auto;font-family:JetBrains Mono,monospace;'
-        'font-size:0.58rem;color:#475569;">' + str(len(activity_log)) + ' events</span>'
-        '</div>'
-
-        + feed_html +
-
-        '</div></div>'
+        '<div class="agent-duration">' + _escape(elapsed_text) + '</div>'
+        '</header>'
+        '<div class="agent-current"><span class="current-label">CURRENT OPERATION</span>'
+        '<span class="current-text">' + _escape(latest_activity) + '</span></div>'
+        '<div class="agent-feed-heading"><span>ACTIVITY LOG</span>'
+        '<span>' + str(len(activity_log)) + ' EVENTS</span></div>'
+        '<div class="agent-feed">' + ''.join(events) + '</div>'
+        '</article>'
     )
 
-    _render(html, 420)
 
-
-# ─────────────────────────────────────────────────────────
-#  COMPLETED AGENT — compact badge
-# ─────────────────────────────────────────────────────────
-def render_agent_complete_badge(agent_key, tool_count=0, elapsed=0):
-    a = AGENT_PROFILES[agent_key]
-    c = a["color"]
-    css = _base_css()
-    html = (
-        '<style>' + css + '</style>'
-        '<div style="display:flex;align-items:center;gap:1rem;'
-        'padding:0.7rem 1.1rem;margin-bottom:0.5rem;'
-        'background:linear-gradient(135deg,' + c + '10,rgba(17,24,39,0.9));'
-        'border:1px solid ' + c + '30;border-radius:14px;'
-        'box-shadow:0 4px 15px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.05);'
-        'position:relative;overflow:hidden;">'
-        '<div style="position:absolute;left:0;top:0;bottom:0;width:3px;'
-        'background:linear-gradient(180deg,' + c + ',transparent);"></div>'
-        '<img src="' + a["avatar_url"] + '" style="width:38px;height:38px;'
-        'border-radius:50%;border:2px solid ' + c + ';background:#0a0e17;'
-        'box-shadow:0 0 12px ' + c + '40;"/>'
-        '<div style="flex:1;">'
-        '<div style="display:flex;align-items:center;gap:0.5rem;">'
-        '<span style="font-family:Exo 2,sans-serif;font-size:0.85rem;'
-        'font-weight:900;color:' + c + ';letter-spacing:3px;">'
-        + a["icon"] + ' ' + a["name"] + '</span>'
-        '<span style="color:#10b981;font-size:1rem;">✓</span></div>'
-        '<div style="font-family:Space Grotesk,sans-serif;font-size:0.65rem;'
-        'color:#94a3b8;letter-spacing:1px;">' + a["role"] + '</div></div>'
-        '<div style="text-align:right;">'
-        '<div style="font-family:JetBrains Mono,monospace;font-size:0.75rem;'
-        'color:#10b981;font-weight:600;">⏱ ' + str(round(elapsed, 1)) + 's</div>'
-        '<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;'
-        'color:#64748b;">' + str(tool_count) + ' tools</div></div>'
-        '</div>'
+def _render(slot, agent_key, status, activity_log, elapsed=None):
+    slot.markdown(
+        render_agent_workstation(agent_key, status, activity_log, elapsed),
+        unsafe_allow_html=True,
     )
-    _render(html, 75)
 
 
-# ─────────────────────────────────────────────────────────
-#  Helper: format tool call for activity log
-# ─────────────────────────────────────────────────────────
-def _format_tool_call(name, args):
-    key_arg = ""
-    for k in ("domain", "url", "ip_address", "query", "company"):
-        if k in args:
-            key_arg = str(args[k])[:40]
-            break
-    if not key_arg and args:
-        key_arg = str(list(args.values())[0])[:40]
-    return name + "(" + key_arg + ")" if key_arg else name + "()"
-
-
-# ─────────────────────────────────────────────────────────
-#  MAIN ORCHESTRATOR
-# ─────────────────────────────────────────────────────────
 def run_osint_audit(target, target_type):
+    """Run specialists sequentially while keeping a dedicated live console for each one."""
     results = {}
+    tool_counts = {agent_key: 0 for agent_key, _, _ in PIPELINE}
+    started_at = time.time()
+    st.session_state["nexus_latest_activity"] = {}
+    st.session_state["nexus_activity_target"] = str(target)
 
-    # Header
-    st.markdown("---")
     st.markdown(
-        '<div style="text-align:center;margin:1.5rem 0;">'
-        '<div style="display:inline-block;padding:0.5rem 1.5rem;'
-        'background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(16,185,129,0.1));'
-        'border:1px solid rgba(59,130,246,0.3);border-radius:30px;">'
-        '<span style="font-family:Exo 2,sans-serif;font-size:1.1rem;font-weight:900;'
-        'letter-spacing:5px;'
-        'background:linear-gradient(135deg,#3b82f6,#10b981,#f59e0b);'
-        'background-size:200% auto;'
-        '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
-        'background-clip:text;animation:gradientShift 3s ease infinite;">'
-        '⚡ MULTI-AGENT RECONNAISSANCE ACTIVE ⚡</span></div></div>',
+        '<div class="operation-banner"><span class="operation-indicator"></span>'
+        '<div><strong>INTELLIGENCE OPERATION IN PROGRESS</strong>'
+        '<span>Authorized passive reconnaissance · ' + _escape(target) + '</span></div>'
+        '<span class="operation-count">05 SPECIALISTS</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="section-heading"><div><span>01 / LIVE OPERATIONS</span>'
+        '<h2>Agent workstations</h2></div><span>Each console retains its full activity history</span></div>',
         unsafe_allow_html=True,
     )
 
-    # Status zones
-    workstation_zone = st.empty()
-    st.markdown(
-        '<div style="margin-top:1.5rem;font-family:Exo 2,sans-serif;font-size:0.75rem;'
-        'font-weight:700;letter-spacing:3px;color:#64748b;text-transform:uppercase;">'
-        '✓ COMPLETED AGENTS</div>',
-        unsafe_allow_html=True,
-    )
-    completed_zone = st.container()
-    st.markdown("---")
+    left_column, right_column = st.columns(2, gap="medium")
+    slots = {}
+    for index, (agent_key, _, _) in enumerate(PIPELINE):
+        column = left_column if index % 2 == 0 else right_column
+        slots[agent_key] = column.empty()
+        _render(slots[agent_key], agent_key, "queued", [])
+        _save_agent_state(agent_key, "queued", [])
 
-    pipeline = [
-        ("aria",   "domain_recon",    3),
-        ("raven",  "threat_intel",    2),
-        ("vulcan", "attack_surface",  2),
-        ("cipher", "email_osint",     1),
-        ("oracle", "final_report",    1),
-    ]
-
-    for agent_key, task, max_rounds in pipeline:
+    for agent_key, task, max_rounds in PIPELINE:
         agent = AGENT_PROFILES[agent_key]
         activity_log = []
-        tool_count = 0
         agent_start = time.time()
+        state = {"status": "deploying"}
 
-        def now_str():
-            return datetime.now().strftime("%H:%M:%S")
-
-        # Initial render
-        with workstation_zone.container():
+        def append_event(event_type, text):
             activity_log.append({
-                "time": now_str(),
-                "icon": "🚀",
-                "text": "Agent " + agent["name"] + " deployed — " + agent["role"],
-                "color": agent["color"],
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "type": event_type,
+                "text": str(text),
             })
-            render_agent_workstation(agent_key, "deploying", activity_log)
+            if event_type == "error":
+                state["status"] = "error"
+            _render(
+                slots[agent_key],
+                agent_key,
+                state["status"],
+                activity_log,
+                time.time() - agent_start,
+            )
+            _save_agent_state(
+                agent_key,
+                state["status"],
+                activity_log,
+                time.time() - agent_start,
+            )
 
-        # Callback that updates the live feed
+        append_event("system", f"{agent['name']} initialized for {task.replace('_', ' ')}.")
+
         def activity_callback(event_type, payload):
-            nonlocal tool_count
             if event_type == "thinking":
-                activity_log.append({
-                    "time": now_str(),
-                    "icon": "🧠",
-                    "text": "Reasoning round " + str(payload) + " — analyzing context",
-                    "color": "#8b5cf6",
-                })
-                with workstation_zone.container():
-                    render_agent_workstation(
-                        agent_key, "thinking", activity_log,
-                        elapsed=time.time() - agent_start,
-                    )
+                state["status"] = "thinking"
+                append_event("thinking", f"Reasoning pass {payload}: evaluating available context.")
             elif event_type == "tool_call":
-                tool_count += 1
-                activity_log.append({
-                    "time": now_str(),
-                    "icon": "⚙",
-                    "text": "Executing: " + _format_tool_call(payload["name"], payload["args"]),
-                    "color": agent["color"],
-                })
-                with workstation_zone.container():
-                    render_agent_workstation(
-                        agent_key, "executing", activity_log,
-                        elapsed=time.time() - agent_start,
-                    )
+                tool_counts[agent_key] += 1
+                state["status"] = "executing"
+                payload = payload if isinstance(payload, dict) else {}
+                append_event(
+                    "tool_call",
+                    "Executing " + _format_tool_call(payload.get("name", "tool"), payload.get("args", {})),
+                )
             elif event_type == "tool_result":
-                preview = payload["preview"].replace("\n", " ")[:80]
-                activity_log.append({
-                    "time": now_str(),
-                    "icon": "📥",
-                    "text": "Received: " + preview + "…",
-                    "color": "#10b981",
-                })
-                with workstation_zone.container():
-                    render_agent_workstation(
-                        agent_key, "executing", activity_log,
-                        elapsed=time.time() - agent_start,
-                    )
+                payload = payload if isinstance(payload, dict) else {}
+                preview = str(payload.get("preview", "No preview returned.")).replace("\n", " ").strip()
+                append_event("tool_result", f"{payload.get('name', 'Tool')} returned: {preview[:180]}")
             elif event_type == "final":
-                activity_log.append({
-                    "time": now_str(),
-                    "icon": "✓",
-                    "text": "Analysis complete — synthesizing findings",
-                    "color": "#10b981",
-                })
+                response = str(payload or "").strip()
+                append_event("final", f"Final response received ({len(response)} characters).")
             elif event_type == "error":
-                activity_log.append({
-                    "time": now_str(),
-                    "icon": "⚠",
-                    "text": str(payload)[:120],
-                    "color": "#f43f5e",
-                })
+                append_event("error", str(payload)[:240])
 
-        # Build prompts
-        sys_prompt = (
-            "You are " + agent["name"] + ", a specialist " + agent["role"]
-            + " in an elite OSINT team. " + agent["description"]
-            + " Use the provided tools to gather REAL data."
-            + " Be concise but thorough. Prioritize impactful tools first."
+        system_prompt = (
+            f"You are {agent['name']}, a specialist {agent['role']} in an OSINT team. "
+            f"{agent['description']} Use the provided tools to gather real, publicly available data. "
+            "Only assess targets the user is authorized to investigate. Be concise but thorough, "
+            "distinguish observed facts from inference, and cite URLs when available."
         )
 
-        if task == "final_report":
-            ctx = "\n\n".join("### " + k.upper() + "\n" + v for k, v in results.items())
-            usr = (
-                "Target: " + target + " (" + target_type + ")\n\n"
-                "Agent findings:\n\n" + ctx + "\n\n"
-                "Produce an executive OSINT report:\n"
-                "1. Executive Summary\n2. Risk Score (0-100)\n"
-                "3. Key Findings\n4. Vulnerabilities (severity-tagged)\n"
-                "5. Recommendations\n6. Conclusion"
-            )
-            finding = run_agent_with_tools(
-                sys_prompt, usr, [], execute_tool, 1,
-                activity_callback=activity_callback,
-            )
-        else:
-            usr = (
-                "Perform " + task.replace("_", " ") + " on: " + target
-                + " (" + target_type + "). Use the most relevant tools."
-                + " Return structured findings."
-            )
-            finding = run_agent_with_tools(
-                sys_prompt, usr, GROQ_TOOL_DEFINITIONS, execute_tool, max_rounds,
-                activity_callback=activity_callback,
-            )
+        try:
+            if task == "final_report":
+                context = "\n\n".join(
+                    f"### {AGENT_PROFILES[key]['name']} FINDINGS\n{value}"
+                    for key, value in results.items()
+                ) or "No specialist findings were returned. Explain this limitation clearly."
+                user_prompt = (
+                    f"Target: {target} ({target_type})\n\n"
+                    f"Specialist findings:\n\n{context}\n\n"
+                    "Produce an executive OSINT report with: Executive Summary, Risk Score (0-100), "
+                    "Key Findings, Vulnerabilities (severity-tagged), Recommendations, and Conclusion. "
+                    "Do not invent evidence; clearly note missing or failed data sources."
+                )
+                finding = run_agent_with_tools(
+                    system_prompt, user_prompt, [], execute_tool, 1,
+                    activity_callback=activity_callback,
+                )
+            else:
+                user_prompt = (
+                    f"Perform {task.replace('_', ' ')} on {target} ({target_type}). "
+                    "Use the most relevant available tools and return structured findings. "
+                    "Only perform passive, publicly accessible checks."
+                )
+                finding = run_agent_with_tools(
+                    system_prompt, user_prompt, GROQ_TOOL_DEFINITIONS, execute_tool,
+                    max_rounds, activity_callback=activity_callback,
+                )
+            finding = str(finding).strip() if finding is not None else ""
+            if not finding:
+                finding = "The agent completed without a text response."
+            results[agent_key] = finding
+            if state["status"] != "error":
+                state["status"] = "complete"
+            append_event("system", f"Analysis finished. {tool_counts[agent_key]} tool call(s) recorded.")
+        except Exception as exc:
+            logging.exception("Agent %s failed", agent_key)
+            finding = f"Agent execution failed: {type(exc).__name__}: {exc}"
+            results[agent_key] = finding
+            state["status"] = "error"
+            append_event("error", finding[:240])
 
-        results[agent_key] = finding
-        elapsed = time.time() - agent_start
-
-        # Final render in workstation with "complete" status, then move to completed zone
-        with workstation_zone.container():
-            render_agent_workstation(agent_key, "complete", activity_log, elapsed=elapsed)
-        time.sleep(0.5)
-        workstation_zone.empty()
-
-        with completed_zone:
-            render_agent_complete_badge(agent_key, tool_count, elapsed)
-
-        time.sleep(0.2)
-
+    completed = sum(1 for value in results.values() if value.strip())
+    st.markdown(
+        '<div class="operation-complete"><span class="complete-mark">✓</span>'
+        '<div><strong>OPERATION COMPLETE</strong><span>'
+        + str(completed) + ' of ' + str(len(PIPELINE)) + ' specialists returned a result · '
+        + f'{time.time() - started_at:.1f}s elapsed</span></div></div>',
+        unsafe_allow_html=True,
+    )
     return results
