@@ -1,7 +1,12 @@
-import sys, os
+import sys, os, warnings
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Suppress the st.components.v1.html deprecation noise
+warnings.filterwarnings("ignore", message=".*st.components.v1.html.*")
+warnings.filterwarnings("ignore", message=".*st.iframe.*")
+
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 from config.settings import AGENT_PROFILES
 from utils.groq_client import run_agent_with_tools
@@ -69,7 +74,7 @@ def render_agent_avatar(agent_key):
         'font-size:0.62rem;color:#475569;">Real-world tools in progress…</span>'
         '</div></div></div>'
     )
-    st.iframe(html=html, height=130, scrolling=False)
+    components.html(html, height=130, scrolling=False)
 
 
 def render_agent_complete(agent_key):
@@ -91,7 +96,7 @@ def render_agent_complete(agent_key):
         '<span style="font-family:Fira Code,monospace;font-size:0.58rem;color:#475569;">'
         'DONE</span></div>'
     )
-    st.iframe(html=html, height=40, scrolling=False)
+    components.html(html, height=40, scrolling=False)
 
 
 def run_osint_audit(target, target_type):
