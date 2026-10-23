@@ -1,100 +1,117 @@
-import json
+import os
 from groq import Groq
 from config.settings import GROQ_API_KEY, MODEL_NAME, MAX_TOKENS, TEMPERATURE
 
+_client = None
 
 def get_client():
-    if not GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY not set")
-    return Groq(api_key=GROQ_API_KEY)
+    global _client
+    if _client is None:
+        key = GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")
+        if not key:
+            try:
+                import streamlit as st
+                key = st.secrets.get("GROQ_API_KEY", "")
+            except Exception:
+                pass
+        _client = Groq(api_key=key)
+    return _client
 
 
-def run_agent_with_tools(
-    system_prompt: str,
-    user_prompt: str,
-    tools: list,
-    tool_executor: callable,
-    max_rounds: int = 5
-) -> str:
+def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
+                         max_rounds=5, activity_callback=None):
     """
-    Core tool-calling loop.
-    1. Sends prompt + tool definitions to Groq
-    2. If Groq calls a tool, executes it locally
-    3. Sends result back to Groq
-    4. Repeats until Groq gives a final text answer
+    Groq tool-calling loop.
+    activity_callback(event_type, payload) is called for every live event:
+        - ('thinking', round_num)
+        - ('tool_call', {'name':..., 'args':...})
+        - ('tool_result', {'name':..., 'preview':...})
+        - ('final', text)
     """
     client = get_client()
-
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
+        {"role": "user",   "content": user_prompt},
     ]
 
-    for round_num in range(max_rounds):
+    for round_num in range(1, max_rounds + 1):
+        if activity_callback:
+            activity_callback("thinking", round_num)
+
+        # Build kwargs — only add tool params if tools exist
+        kwargs = {
+            "model": MODEL_NAME,
+            "messages": messages,
+            "temperature": TEMPERATURE,
+            "max_tokens": MAX_TOKENS,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+
         try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                tools=tools if tools else None,
-                tool_choice="auto" if tools else None,
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE
-            )
+            response = client.chat.completions.create(**kwargs)
         except Exception as e:
-            return f"❌ LLM API Error (round {round_num + 1}): {str(e)}"
+            err = f"❌ LLM API Error (round {round_num}): {e}"
+            if activity_callback:
+                activity_callback("error", err)
+            return err
 
-        choice = response.choices[0]
-        msg = choice.message
+        msg = response.choices[0].message
 
-        # If no tool calls, we have our final answer
-        if not msg.tool_calls:
-            return msg.content or "No response generated."
+        # Final text answer (no tool calls)
+        if not getattr(msg, "tool_calls", None):
+            final = msg.content or "_(no content returned)_"
+            if activity_callback:
+                activity_callback("final", final)
+            return final
 
-        # Add assistant message with tool calls
+        # Append assistant message with tool calls
         messages.append({
             "role": "assistant",
-            "content": msg.content,
+            "content": msg.content or "",
             "tool_calls": [
                 {
                     "id": tc.id,
                     "type": "function",
                     "function": {
                         "name": tc.function.name,
-                        "arguments": tc.function.arguments
-                    }
-                }
-                for tc in msg.tool_calls
-            ]
+                        "arguments": tc.function.arguments,
+                    },
+                } for tc in msg.tool_calls
+            ],
         })
 
-        # Execute each tool call
+        # Execute each tool
         for tc in msg.tool_calls:
-            func_name = tc.function.name
+            import json
             try:
-                func_args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                func_args = {}
+                args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except Exception:
+                args = {}
+
+            if activity_callback:
+                activity_callback("tool_call", {
+                    "name": tc.function.name,
+                    "args": args,
+                })
 
             try:
-                result = tool_executor(func_name, func_args)
-                result_str = json.dumps(result, default=str, indent=2)
+                result = tool_executor(tc.function.name, args)
+                result_str = str(result)[:3000]
             except Exception as e:
-                result_str = json.dumps({"error": str(e)})
+                result_str = f"Tool error: {e}"
+
+            if activity_callback:
+                activity_callback("tool_result", {
+                    "name": tc.function.name,
+                    "preview": result_str[:200],
+                })
 
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": result_str
+                "content": result_str,
             })
 
-    # If we exhausted rounds, get a final summary
-    try:
-        final = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages + [{"role": "user", "content": "Provide your final analysis now."}],
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE
-        )
-        return final.choices[0].message.content or "Analysis complete."
-    except Exception as e:
-        return f"❌ Final summary error: {str(e)}"
+    return "_(Max rounds reached without final answer)_"
