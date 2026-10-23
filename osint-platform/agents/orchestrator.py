@@ -1,9 +1,9 @@
-import sys, os, warnings
+import sys, os, logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Suppress the st.components.v1.html deprecation noise
-warnings.filterwarnings("ignore", message=".*st.components.v1.html.*")
-warnings.filterwarnings("ignore", message=".*st.iframe.*")
+# Kill Streamlit deprecation spam BEFORE importing streamlit
+logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -24,6 +24,14 @@ def _iframe_css():
         "@keyframes sglow{0%,100%{opacity:1;box-shadow:0 0 6px #10b981}50%{opacity:0.3;box-shadow:0 0 2px #10b981}}"
         "@keyframes scanm{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}"
     )
+
+
+def _render_html(html, height):
+    """Render HTML — tries st.html() first (new API), falls back to components."""
+    try:
+        st.html(html, height=height, scrolling=False)
+    except (AttributeError, TypeError):
+        components.html(html, height=height, scrolling=False)
 
 
 def render_agent_avatar(agent_key):
@@ -74,7 +82,7 @@ def render_agent_avatar(agent_key):
         'font-size:0.62rem;color:#475569;">Real-world tools in progress…</span>'
         '</div></div></div>'
     )
-    components.html(html, height=130, scrolling=False)
+    _render_html(html, 130)
 
 
 def render_agent_complete(agent_key):
@@ -96,7 +104,7 @@ def render_agent_complete(agent_key):
         '<span style="font-family:Fira Code,monospace;font-size:0.58rem;color:#475569;">'
         'DONE</span></div>'
     )
-    components.html(html, height=40, scrolling=False)
+    _render_html(html, 40)
 
 
 def run_osint_audit(target, target_type):
@@ -114,12 +122,14 @@ def run_osint_audit(target, target_type):
     done_box = st.container()
     st.markdown("---")
 
+    # OPTIMIZED: reduced rounds for 50% faster execution
+    # Old: 6+4+4+3+1 = 18 rounds  →  New: 3+2+2+1+1 = 9 rounds
     pipeline = [
-        ("aria", "domain_recon", 6),
-        ("raven", "threat_intel", 4),
-        ("vulcan", "attack_surface", 4),
-        ("cipher", "email_osint", 3),
-        ("oracle", "final_report", 1),
+        ("aria",   "domain_recon",    3),
+        ("raven",  "threat_intel",    2),
+        ("vulcan", "attack_surface",  2),
+        ("cipher", "email_osint",     1),
+        ("oracle", "final_report",    1),
     ]
 
     for agent_key, task, max_rounds in pipeline:
@@ -130,26 +140,26 @@ def run_osint_audit(target, target_type):
         sys_prompt = (
             "You are " + agent["name"] + ", a specialist " + agent["role"]
             + " in an elite OSINT team. " + agent["description"]
-            + " Always use the provided tools to gather REAL data."
-            + " Never fabricate information. Be thorough and technical."
+            + " Use the provided tools to gather REAL data."
+            + " Be concise but thorough. Prioritize the most impactful tools first."
         )
 
         if task == "final_report":
-            ctx = "\n\n".join("### " + k.upper() + " FINDINGS\n" + v for k, v in results.items())
+            ctx = "\n\n".join("### " + k.upper() + "\n" + v for k, v in results.items())
             usr = (
                 "Target: " + target + " (" + target_type + ")\n\n"
-                "Findings from all agents:\n\n" + ctx + "\n\n"
-                "Produce an executive-grade OSINT report:\n"
+                "Agent findings:\n\n" + ctx + "\n\n"
+                "Produce an executive OSINT report:\n"
                 "1. Executive Summary\n2. Risk Score (0-100)\n"
-                "3. Key Findings\n4. Vulnerabilities (severity-tagged)\n"
+                "3. Key Findings\n4. Vulnerabilities\n"
                 "5. Recommendations\n6. Conclusion"
             )
             finding = run_agent_with_tools(sys_prompt, usr, [], execute_tool, 1)
         else:
             usr = (
-                "Perform " + task.replace("_", " ") + " on target: " + target
-                + " (type: " + target_type + "). Use every relevant tool."
-                + " Return detailed, structured findings."
+                "Perform " + task.replace("_", " ") + " on: " + target
+                + " (" + target_type + "). Use the most relevant tools."
+                + " Return structured findings."
             )
             finding = run_agent_with_tools(
                 sys_prompt, usr, GROQ_TOOL_DEFINITIONS, execute_tool, max_rounds
@@ -159,6 +169,6 @@ def run_osint_audit(target, target_type):
         active_box.empty()
         with done_box:
             render_agent_complete(agent_key)
-        time.sleep(0.3)
+        time.sleep(0.2)
 
     return results
