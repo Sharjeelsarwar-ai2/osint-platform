@@ -97,7 +97,7 @@ def _timeline_markup(summary):
         tools = summary["tool_counts"].get(agent_key, 0)
         nodes.append(
             '<div class="tl-node ' + node_class + '">'
-            '<span class="tl-mark" style="--agent-accent:' + _escape(agent.get("color", "#43c6e8")) + '">' + mark + "</span>"
+            '<span class="tl-mark" style="--agent-accent:' + _escape(agent.get("color", "#FF2E88")) + '">' + mark + "</span>"
             '<span class="tl-name">' + _escape(agent.get("name", agent_key)) + "</span>"
             '<span class="tl-meta">' + _escape(STATUS_LABELS.get(status, status).title()) + " · " + str(tools) + " tools</span>"
             "</div>"
@@ -121,7 +121,7 @@ def render_global_feed_html(global_activity, limit=40):
         rows.append(
             '<div class="feed-row">'
             "<time>" + _escape(event.get("time", "")) + "</time>"
-            '<span class="feed-agent" style="--agent-accent:' + _escape(agent.get("color", "#43c6e8")) + '">'
+            '<span class="feed-agent" style="--agent-accent:' + _escape(agent.get("color", "#FF2E88")) + '">'
             + _escape(agent.get("name", event.get("agent", ""))) + "</span>"
             '<span class="event-tag event-' + _escape(event.get("type", "system")) + '">'
             + _escape(EVENT_LABELS.get(event.get("type", "system"), "LOG")) + "</span>"
@@ -198,7 +198,7 @@ def _avatar_markup():
 def render_agent_workstation(agent_key, status="queued", activity_log=None, elapsed=None):
     """Render one animated, persistent specialist console and its complete event history."""
     agent = AGENT_PROFILES[agent_key]
-    accent = agent.get("color", "#43c6e8")
+    accent = agent.get("color", "#FF2E88")
     activity_log = activity_log or []
     status_label = STATUS_LABELS.get(status, "INITIALIZING")
     latest_activity = activity_log[-1]["text"] if activity_log else "Waiting for the orchestration queue."

@@ -17,18 +17,33 @@ only — use only targets you are authorized to assess.
 - **Config:** `osint-platform/config/settings.py` — agent profiles, model, key
   from `GROQ_API_KEY` env / Streamlit secrets (never committed)
 
-## UI — `ui-advanced-animated` branch
+## UI — `ui-v2-radical-animated` branch (v2, replaces the v1 look)
 
-- Aurora/gradient dark theme, glass panels, staggered reveals, hover glow
-  and sheen, breathing/pulsing cards for running agents, animated progress
-  bars, and `prefers-reduced-motion` support.
-- **Mission Control:** pipeline timeline (done / current / queued / error),
-  overall progress, tools executed, event count, elapsed time.
+V1 kept the old cyan-blue hero and layout, so on idle it looked almost
+unchanged. V2 is unmistakably different at first glance:
+
+- **New colour scheme — NEON NOIR:** violet-black obsidian background
+  with vivid magenta (#FF2E88), violet (#8B5CF6), electric lime (#C6FF3D)
+  and amber (#FFB020). Agent accents: ARIA magenta, RAVEN violet, VULCAN
+  amber, CIPHER lime, ORACLE fuchsia. No cyan-blue dominant scheme.
+- **New hero:** "Track the invisible. / Expose the truth." in animated
+  magenta→amber and lime→violet gradients, inside a glass panel with
+  three drifting aurora orbs (magenta, violet, lime), staggered entrance,
+  and badges "REAL AGENTS · NO SIMULATION".
+- **Live Team Board, always at the top:** five large agent cards with
+  bobbing glowing avatars, pulsing status dots, role, catchphrase and
+  real status/tools from session state (STANDBY on idle, WORKING during
+  a scan). Ambient motion only on idle — no fake work.
+- **Mission Control, always visible:** on idle it honestly shows 0%,
+  all agents queued and an empty feed; during a real scan it lights up
+  with the pipeline timeline, live agent cards, progress, elapsed time
+  and the chronological global activity feed (real events only).
 - **Live agent activity — real, not simulated:** each agent workstation
   shows its true status (queued / analyzing / running tool / synthesizing /
   complete / partial / needs attention) and the exact tools it executed.
   A global activity feed merges every agent's real events chronologically.
   When idle, the UI honestly shows standby — no fake activity.
+- `prefers-reduced-motion` is still honoured.
 - Report view keeps the risk-score panel, per-agent findings with tools
   executed, JSON download, and a PDF download (fixed: it previously
   exported a blank PDF because it looked up legacy task keys).

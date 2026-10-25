@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-from agents.orchestrator import render_saved_agent_workstations, run_osint_audit
+from agents.orchestrator import render_mission_control, render_saved_agent_workstations, run_osint_audit
 from agents.tools import TOOL_REGISTRY
 from config.settings import AGENT_PROFILES, GROQ_API_KEY, MODEL_NAME
 
@@ -34,7 +34,7 @@ def get_css():
     return """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
-    :root{--bg:#080d14;--panel:#0d141e;--raised:#111b27;--border:#1d2a38;--text:#edf4fb;--muted:#91a1b2;--subtle:#66788b;--accent:#47c8e8;--green:#55d6a5}
+    :root{--bg:#0b0514;--panel:#150a26;--raised:#1e0f38;--border:#3b1f5e;--text:#fff6ff;--muted:#c4b5d6;--subtle:#8a7aa3;--accent:#ff2e88;--accent2:#8b5cf6;--lime:#c6ff3d;--amber:#ffb020;--green:#c6ff3d}
     html,body,[class*="css"]{font-family:'Manrope',sans-serif}
     .stApp{background:radial-gradient(ellipse at 50% -22%,rgba(33,94,132,.22),transparent 52%),var(--bg);color:var(--text)}
     .stApp:before{content:'';position:fixed;inset:0;pointer-events:none;opacity:.15;z-index:0;background-image:linear-gradient(rgba(112,159,191,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(112,159,191,.055) 1px,transparent 1px);background-size:44px 44px}
@@ -105,6 +105,93 @@ def get_css():
     .download-row{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:.7rem 0 1rem}
     @media(max-width:850px){.mission-timeline{flex-direction:column}.tl-connector{display:none}.feed-row{grid-template-columns:42px 52px 52px minmax(0,1fr)}.download-row{grid-template-columns:1fr}}
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+    /* ===== V2 RADICAL REDESIGN — NEON NOIR: magenta / violet / lime / amber ===== */
+    /* This layer intentionally replaces the v1 cyan-blue look. Same classes, new scheme. */
+    .stApp{background:radial-gradient(ellipse 1000px 520px at 8% -12%,rgba(255,46,136,.34),transparent 62%),radial-gradient(ellipse 900px 480px at 92% 4%,rgba(139,92,246,.32),transparent 60%),radial-gradient(ellipse 700px 380px at 50% 110%,rgba(198,255,61,.10),transparent 60%),#0b0514!important;color:#fff6ff}
+    .stApp:before{background-image:linear-gradient(rgba(255,46,136,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(198,255,61,.06) 1px,transparent 1px)!important;opacity:.35}
+    header[data-testid='stHeader']{background:transparent}
+    .block-container{max-width:1480px}
+    /* Top bar */
+    .nx-topbar{border-bottom:1px solid #ff2e88!important;padding-bottom:1rem}
+    .nx-mark{border-color:rgba(255,46,136,.7)!important;color:#fff!important;background:linear-gradient(135deg,#ff2e88,#8b5cf6)!important;box-shadow:0 0 28px rgba(255,46,136,.55)!important}
+    .nx-brand-name{letter-spacing:.18em}
+    .nx-live-dot{background:#c6ff3d!important;box-shadow:0 0 14px rgba(198,255,61,.9)!important}
+    /* Hero v2 — completely new composition */
+    .nx-hero-v2{position:relative;overflow:hidden;border:1px solid rgba(255,46,136,.45);border-radius:22px;padding:2.4rem 2.2rem 2rem;margin:1.2rem 0 1.4rem;background:linear-gradient(120deg,rgba(38,10,64,.96),rgba(20,6,36,.96));box-shadow:0 24px 60px rgba(0,0,0,.5),0 0 0 1px rgba(139,92,246,.15) inset;animation:hero-in .7s ease-out both}
+    .nx-orb{position:absolute;border-radius:50%;filter:blur(38px);pointer-events:none;opacity:.75}
+    .nx-orb-a{width:340px;height:340px;left:-90px;top:-120px;background:#ff2e88;animation:orb-drift 16s ease-in-out infinite alternate}
+    .nx-orb-b{width:300px;height:300px;right:-70px;top:-60px;background:#8b5cf6;animation:orb-drift 20s ease-in-out infinite alternate-reverse}
+    .nx-orb-c{width:220px;height:220px;right:22%;bottom:-140px;background:#c6ff3d;opacity:.35;animation:orb-drift 14s ease-in-out infinite alternate}
+    @keyframes orb-drift{from{transform:translate(0,0) scale(1)}to{transform:translate(48px,28px) scale(1.18)}}
+    @keyframes hero-in{from{opacity:0;transform:translateY(18px) scale(.995)}to{opacity:1;transform:translateY(0) scale(1)}}
+    .nx-hero-v2 .nx-eyebrow{color:#c6ff3d!important;position:relative;z-index:1}
+    .nx-hero-title{position:relative;z-index:1;font-size:clamp(2.6rem,5.2vw,4.6rem);line-height:.98;font-weight:900;letter-spacing:-.04em;margin:.2rem 0}
+    .nx-hero-title .line-a{background:linear-gradient(92deg,#ff2e88,#ffb020,#ff2e88);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradient-slide 6s ease-in-out infinite}
+    .nx-hero-title .line-b{background:linear-gradient(92deg,#c6ff3d,#8b5cf6,#c6ff3d);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradient-slide 7s ease-in-out infinite reverse}
+    .nx-hero-sub{position:relative;z-index:1;color:#d9c8f0!important;font-size:1rem!important;max-width:760px!important;line-height:1.7}
+    .nx-hero-v2 .nx-badges{position:relative;z-index:1}
+    .nx-badge{border-color:#3b1f5e!important;background:rgba(255,46,136,.12)!important;color:#ffd7ea!important}
+    .nx-badge.hot{background:#ff2e88!important;color:#fff!important;border-color:#ff2e88!important;box-shadow:0 0 18px rgba(255,46,136,.5)}
+    .nx-badge.lime{background:rgba(198,255,61,.14)!important;color:#e6ffb0!important;border-color:rgba(198,255,61,.45)!important}
+    /* Metrics v2 */
+    .metric-card{background:linear-gradient(145deg,#1e0f38,#12081f)!important;border:1px solid #3b1f5e!important;border-top:3px solid #ff2e88!important;box-shadow:0 14px 30px rgba(0,0,0,.35)}
+    .metric-card:nth-child(2){border-top-color:#8b5cf6!important}.metric-card:nth-child(3){border-top-color:#ffb020!important}.metric-card:nth-child(4){border-top-color:#c6ff3d!important}
+    .metric-value{color:#fff6ff!important}.metric-label{color:#c4b5d6!important}
+    /* Live team board v2 — the idle agent board, prominent and alive */
+    .team-board{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.8rem;margin:1rem 0 1.5rem}
+    .team-card{position:relative;overflow:hidden;border:1px solid #3b1f5e;border-radius:16px;padding:1rem .9rem;background:linear-gradient(160deg,rgba(38,14,66,.95),rgba(16,7,30,.95));transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease;animation:fade-up .5s ease-out both}
+    .team-card:hover{transform:translateY(-6px) scale(1.015);border-color:var(--agent-accent);box-shadow:0 18px 36px rgba(0,0,0,.45),0 0 24px color-mix(in srgb,var(--agent-accent) 28%,transparent)}
+    .team-card:before{content:'';position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,color-mix(in srgb,var(--agent-accent) 14%,transparent) 50%,transparent 70%);transform:translateX(-130%);transition:transform .8s ease}
+    .team-card:hover:before{transform:translateX(130%)}
+    .team-avatar{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-size:1.5rem;border:2px solid var(--agent-accent);background:rgba(0,0,0,.35);box-shadow:0 0 22px color-mix(in srgb,var(--agent-accent) 45%,transparent);animation:team-bob 3.4s ease-in-out infinite}
+    @keyframes team-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+    .team-name{font-weight:900;letter-spacing:.06em;margin-top:.6rem}
+    .team-role{color:#c4b5d6;font-size:.66rem;line-height:1.4}
+    .team-catch{color:#e9d5ff;font-size:.64rem;font-style:italic;margin-top:.35rem;line-height:1.5}
+    .team-status{display:inline-flex;align-items:center;gap:.4rem;margin-top:.6rem;padding:.22rem .55rem;border-radius:99px;border:1px solid var(--agent-accent);color:#fff;font:600 .55rem 'DM Mono',monospace;letter-spacing:.08em}
+    .team-dot{width:8px;height:8px;border-radius:50%;background:var(--agent-accent);box-shadow:0 0 10px var(--agent-accent);animation:signal-pulse 1.6s ease-in-out infinite}
+    .team-tools{color:#8a7aa3;font:500 .55rem 'DM Mono',monospace;margin-top:.4rem}
+    /* Target form / buttons v2 */
+    .stTextInput input{background:#12081f!important;border:1px solid #3b1f5e!important}
+    .stTextInput input:focus{border-color:#ff2e88!important;box-shadow:0 0 0 1px rgba(255,46,136,.35)!important}
+    .stSelectbox [data-baseweb='select']>div{background:#12081f!important;border:1px solid #3b1f5e!important}
+    div.stButton>button,div[data-testid='stFormSubmitButton'] button{background:linear-gradient(115deg,#ff2e88,#8b5cf6)!important;border-color:#ff2e88!important;box-shadow:0 10px 28px rgba(255,46,136,.35)!important;font-size:.78rem!important}
+    div.stButton>button:hover,div[data-testid='stFormSubmitButton'] button:hover{background:linear-gradient(115deg,#ff5aa3,#a78bfa)!important;box-shadow:0 14px 32px rgba(255,46,136,.5)!important}
+    /* Mission Control v2 — bigger, magenta/lime, impossible to miss */
+    .mission-control{border:2px solid #ff2e88!important;background:linear-gradient(150deg,#24103f,#0f061f)!important;border-radius:20px!important;padding:1.3rem 1.4rem!important;box-shadow:0 24px 60px rgba(0,0,0,.5),0 0 32px rgba(255,46,136,.18)!important}
+    .mission-control:before{background:linear-gradient(90deg,#ff2e88,#ffb020,#c6ff3d,#8b5cf6,transparent)!important;height:4px!important}
+    .mission-live{border-color:#c6ff3d!important;box-shadow:0 0 0 1px rgba(198,255,61,.25),0 24px 60px rgba(0,0,0,.5)!important}
+    .mission-head h2{font-size:1.45rem!important}
+    .mission-live-label{color:#c6ff3d!important}
+    .mission-progress-track{background:#2a1447!important;height:12px!important}
+    .mission-progress-fill{background:linear-gradient(90deg,#ff2e88,#ffb020,#c6ff3d)!important}
+    .mission-progress-pct{color:#c6ff3d!important;font-size:.9rem!important}
+    .tl-node{background:#160a2a!important;border-color:#3b1f5e!important}
+    .tl-node.node-current{border-color:#c6ff3d!important;box-shadow:0 0 22px rgba(198,255,61,.25)!important}
+    .tl-node.node-done{border-color:rgba(198,255,61,.5)!important}
+    .feed-row{border-bottom-color:#3b1f5e!important}
+    .feed-text{color:#e9d5ff!important}
+    /* Agent consoles v2 */
+    .agent-console{background:linear-gradient(150deg,#1a0b30,#0f061f)!important;border-color:#3b1f5e!important}
+    .agent-console.status-thinking,.agent-console.status-executing,.agent-console.status-finalizing{animation:console-breathe 1.8s ease-in-out infinite!important}
+    .agent-console.status-complete{border-color:rgba(198,255,61,.45)!important}
+    /* Idle panel v2 */
+    .idle-panel{border:2px dashed #ff2e88!important;background:linear-gradient(120deg,rgba(255,46,136,.12),rgba(139,92,246,.12))!important;border-radius:16px!important}
+    .idle-panel strong{color:#fff6ff!important}
+    .idle-panel span{color:#d9c8f0!important}
+    /* Report / risk / downloads v2 */
+    .report-summary{border-color:rgba(198,255,61,.4)!important;background:linear-gradient(110deg,rgba(198,255,61,.08),rgba(139,92,246,.12))!important}
+    .report-summary-title{color:#e6ffb0!important}
+    .risk-panel{background:#160a2a!important;border-color:#3b1f5e!important}
+    [data-testid='stExpander']{background:#160a2a!important;border-color:#3b1f5e!important}
+    .stDownloadButton button{background:#1e0f38!important;color:#fff6ff!important;border-color:#ff2e88!important}
+    .section-kicker{color:#ff2e88!important}
+    .nx-footer{border-top-color:#3b1f5e!important;color:#8a7aa3!important}
+    @media(max-width:850px){.team-board{grid-template-columns:repeat(2,1fr)}.nx-hero-title{font-size:2.4rem}}
+    @media(max-width:520px){.team-board{grid-template-columns:1fr 1fr}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
     </style>
     """
 
@@ -112,15 +199,15 @@ def get_css():
 def render_header():
     st.markdown(
         '<div class="nx-topbar"><div class="nx-brand"><div class="nx-mark">N</div>'
-        '<div><div class="nx-brand-name">NEXUS</div><div class="nx-brand-sub">INTELLIGENCE OPERATIONS</div></div></div>'
-        '<div class="nx-live"><i class="nx-live-dot"></i> SYSTEM READY <span style="color:#425465">/</span> '
+        '<div><div class="nx-brand-name">NEXUS</div><div class="nx-brand-sub">LIVE INTELLIGENCE BOARD</div></div></div>'
+        '<div class="nx-live"><i class="nx-live-dot"></i> LIVE BOARD <span style="color:#8a7aa3">/</span> '
         + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC") + '</div></div>'
-        '<div class="nx-hero"><div class="nx-eyebrow">Open-source intelligence · multi-agent analysis</div>'
-        '<h1 class="nx-title">Know the <span>exposure.</span><br>Make the next move.</h1>'
-        '<p class="nx-subtitle">A coordinated intelligence workspace for domain, threat, attack-surface and email-security research. '
-        'Watch each specialist work, inspect the exact tools executed, and review evidence-backed findings.</p>'
-        '<div class="nx-badges"><span class="nx-badge">PASSIVE RECONNAISSANCE</span>'
-        '<span class="nx-badge">5 SPECIALIST AGENTS</span><span class="nx-badge">GROQ · ' + _escape(MODEL_NAME) + '</span></div></div>',
+        '<div class="nx-hero-v2"><span class="nx-orb nx-orb-a"></span><span class="nx-orb nx-orb-b"></span><span class="nx-orb nx-orb-c"></span>'
+        '<div class="nx-eyebrow">● LIVE TEAM BOARD · 5 REAL AGENTS · REAL ACTIVITY ONLY · NO SIMULATION</div>'
+        '<h1 class="nx-hero-title"><span class="line-a">Track the invisible.</span><br><span class="line-b">Expose the truth.</span></h1>'
+        '<p class="nx-hero-sub">Five specialists hunt, trace and verify in real time — domain, threat, attack-surface and email evidence, on one glowing board. Watch them work, see every tool they run, and read the evidence they actually found.</p>'
+        '<div class="nx-badges"><span class="nx-badge hot">REAL AGENTS · NO SIMULATION</span>'
+        '<span class="nx-badge lime">5 LIVE SPECIALISTS</span><span class="nx-badge">GROQ · ' + _escape(MODEL_NAME) + '</span></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -141,32 +228,61 @@ def render_metrics():
     st.markdown(markup + '</div>', unsafe_allow_html=True)
 
 
-def render_agent_showcase():
-    markup = '<div class="agent-roster">'
+def render_live_team_board():
+    """Live team board: real status from session state when a run exists, else honest standby.
+
+    Ambient animation (bobbing avatars, pulsing dots, moving orbs) is CSS only.
+    It never invents a scan, a tool call, or a result — status/tools come from
+    nexus_latest_activity / nexus_operation written by run_osint_audit, or standby.
+    """
+    from agents.orchestrator import STATUS_LABELS as _LABELS
+    activity = st.session_state.get("nexus_latest_activity", {}) or {}
+    operation = st.session_state.get("nexus_operation", {}) or {}
+    tool_counts = operation.get("tool_counts", {}) or {}
+    is_running = operation.get("status") == "running"
+    current = operation.get("current_agent")
+    markup = '<div class="team-board">'
     for index, key in enumerate(AGENT_ORDER, start=1):
         agent = AGENT_PROFILES[key]
+        record = activity.get(key, {}) or {}
+        raw_status = record.get("status", "queued")
+        if is_running and key == current:
+            status_text = "● WORKING NOW"
+        elif raw_status == "complete":
+            status_text = "✓ COMPLETE"
+        elif raw_status == "error":
+            status_text = "✕ NEEDS ATTENTION"
+        elif raw_status in ("thinking", "executing", "finalizing"):
+            status_text = "● WORKING"
+        elif activity:
+            status_text = _LABELS.get(raw_status, "QUEUED").upper()
+        else:
+            status_text = "● STANDBY — READY"
+        tools = tool_counts.get(key, 0)
+        tools_text = f"{tools} tool(s) this run" if activity else "No scan yet — 0 tools"
         markup += (
-            '<div class="roster-card" style="--agent-accent:' + _escape(agent["color"]) + '">'
-            '<div class="roster-code">SPECIALIST / ' + f'{index:02d}' + '</div>'
-            '<div class="roster-icon">' + _escape(agent.get("icon", "")) + '</div>'
-            '<div class="roster-name">' + _escape(agent["name"]) + '</div>'
-            '<div class="roster-role">' + _escape(agent["role"]) + '</div>'
-            '<div class="roster-catch">“' + _escape(agent.get("catchphrase", "")) + '”</div>'
-            '<div class="roster-status">● STANDBY</div></div>'
+            '<div class="team-card" style="--agent-accent:' + _escape(agent["color"]) + '">'
+            '<div class="team-avatar">' + _escape(agent.get("icon", "")) + '</div>'
+            '<div class="team-name">' + _escape(agent["name"]) + ' <span style="color:#8a7aa3;font-size:.6rem">/ ' + f'{index:02d}' + '</span></div>'
+            '<div class="team-role">' + _escape(agent["role"]) + '</div>'
+            '<div class="team-catch">“' + _escape(agent.get("catchphrase", "")) + '”</div>'
+            '<div><span class="team-status"><span class="team-dot"></span>' + status_text + '</span></div>'
+            '<div class="team-tools">' + tools_text + '</div></div>'
         )
-    st.markdown(markup + '</div>', unsafe_allow_html=True)
+    markup += '</div>'
+    st.markdown(markup, unsafe_allow_html=True)
+
+
+def render_agent_showcase():
+    # Kept as an alias so older callers still get the new board, not the old roster.
+    render_live_team_board()
 
 
 def render_idle_state():
-    """Honest standby panel: agents are idle until a real scan starts.
-
-    No simulated activity, no fake pulses pretending work is happening.
-    """
+    """Honest standby panel for v2: animated, but explicitly not a fake run."""
     st.markdown(
-        '<div class="idle-panel"><strong>No operation running — specialists on standby</strong>'
-        '<span>Enter an authorized target above and run a scan. Mission Control will then '
-        'show each agent working in real time: its status, the exact tools it executes, '
-        'and a chronological activity feed. Until then, nothing here moves as if it were working.</span></div>',
+        '<div class="idle-panel"><strong>● TEAM ON STANDBY — BOARD IS LIVE, NO SCAN RUNNING</strong>'
+        '<span>This board is animated (moving aurora, bobbing agents, pulsing dots), but no agent is working yet and nothing is simulated. Enter an authorized target and run a scan — Mission Control will then light up with the real pipeline, live agent cards, and the chronological activity feed as each specialist actually works.</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -335,18 +451,26 @@ def render_report(report):
 def main():
     st.markdown(get_css(), unsafe_allow_html=True)
     render_header()
-    render_metrics()
-
     st.markdown(
-        '<div class="section-heading"><div><span class="section-kicker">01 / TEAM</span>'
-        '<h2>Five focused specialists</h2></div><span>One target · coordinated analysis</span></div>',
+        '<div class="section-heading"><div><span class="section-kicker">01 / LIVE TEAM BOARD</span>'
+        '<h2>Five specialists, live on one board</h2></div><span>Real status · real tools · no simulation</span></div>',
         unsafe_allow_html=True,
     )
-    render_agent_showcase()
-
+    render_live_team_board()
+    render_metrics()
+    st.markdown(
+        '<div class="section-heading"><div><span class="section-kicker">02 / MISSION CONTROL</span>'
+        '<h2>Operation board — always visible</h2></div><span>0% on standby · lights up during a real scan</span></div>',
+        unsafe_allow_html=True,
+    )
+    # Always-visible Mission Control: on idle it honestly shows 0% / queued /
+    # empty feed (render_mission_control reads real session state only).
+    # During a scan the orchestrator re-renders it live in its own slot.
+    if not st.session_state.get("nexus_latest_activity"):
+        st.markdown(render_mission_control(), unsafe_allow_html=True)
     st.markdown(
         '<div class="section-heading"><div><span class="section-kicker">START AN OPERATION</span>'
-        '<h2>Define an authorized target</h2></div><span>Use only targets you are authorized to assess.</span></div>',
+        '<h2>Launch a real scan</h2></div><span>Use only targets you are authorized to assess.</span></div>',
         unsafe_allow_html=True,
     )
     with st.container(border=True):
@@ -357,11 +481,9 @@ def main():
             with col_type:
                 target_type = st.selectbox("Target type", ["Domain", "IP Address", "Company"])
             with col_button:
-                launch = st.form_submit_button("Run intelligence scan", use_container_width=True)
-
+                launch = st.form_submit_button("▶ RUN INTELLIGENCE SCAN", use_container_width=True)
     if not get_api_key():
         st.warning("Groq API key required. Set GROQ_API_KEY in the environment or in Streamlit secrets to enable agent runs.")
-
     activity_rendered = False
     if launch:
         if not target.strip():
@@ -371,10 +493,6 @@ def main():
         else:
             activity_rendered = True
             started = time.time()
-            # FIX: a previous report stayed visible under the new live
-            # consoles until the new run finished, which looked like
-            # the old findings belonged to the new target. Clear it
-            # before the run; it is rebuilt from the new results below.
             st.session_state["nexus_latest_report"] = None
             try:
                 results = run_osint_audit(target.strip(), target_type.lower())
@@ -387,24 +505,20 @@ def main():
                 }
             except Exception as exc:
                 st.error(f"The scan could not be completed: {type(exc).__name__}: {exc}")
-
     if not activity_rendered:
         render_saved_agent_workstations()
-
     if (
         not activity_rendered
         and not st.session_state.get("nexus_latest_activity")
         and not st.session_state.get("nexus_latest_report")
     ):
         render_idle_state()
-
     latest_report = st.session_state.get("nexus_latest_report")
     if latest_report:
         render_report(latest_report)
-
     st.markdown(
-        '<div class="nx-footer"><span>NEXUS INTELLIGENCE OPERATIONS</span>'
-        '<span>PASSIVE OSINT · VERIFY SOURCES BEFORE ACTION</span></div>',
+        '<div class="nx-footer"><span>NEXUS · LIVE INTELLIGENCE BOARD</span>'
+        '<span>PASSIVE OSINT · REAL AGENTS · VERIFY SOURCES BEFORE ACTION</span></div>',
         unsafe_allow_html=True,
     )
 
