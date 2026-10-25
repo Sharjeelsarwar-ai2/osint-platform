@@ -17,6 +17,41 @@ only — use only targets you are authorized to assess.
 - **Config:** `osint-platform/config/settings.py` — agent profiles, model, key
   from `GROQ_API_KEY` env / Streamlit secrets (never committed)
 
+## UI — `ui-v3-full-refactor` branch (v3, replaces the v2 layout)
+
+V2 kept the Neon Noir colours (user liked them) but kept the old vertical
+layout (hero → metrics → roster → form → report), so it still looked like
+the previous UI. V3 is a full layout + UI-architecture refactor:
+
+- **New layout, not a scroll:** a persistent **Agent Dock in the sidebar**
+  (5 large SVG character portraits, always visible), a top **Command Bar**,
+  a dashboard hero strip + operation-status bento, a metrics bento row,
+  and a dashboard split — Operations (launch form + Mission Control) on
+  the left, Live Activity panel on the right — with workstations and the
+  report below. No more hero → metrics → roster → form in the old order.
+- **UI architecture (frontend only):** `osint-platform/app.py` is now a
+  thin composition entry point. Presentation lives in `osint-platform/ui/`:
+  `styles.py` (Neon Noir CSS + layout/character animation),
+  `components.py` (command bar, hero, metrics, dock, activity panel,
+  status bento, idle state — pure HTML builders + thin Streamlit wrappers),
+  `avatars.py` + `ui/avatars/*.svg` (committed character portraits),
+  `report.py` (risk panel, findings, JSON/PDF downloads).
+- **Agent characters / avatars (headline):** each agent has a distinct
+  committed SVG portrait with face, silhouette and accessory:
+  ARIA (magenta scout, radar antenna), RAVEN (violet hooded hunter),
+  VULCAN (amber angular forge mapper), CIPHER (lime round decoder with
+  code eyes and envelope), ORACLE (fuchsia crowned synthesizer with
+  crystal). Characters are large in the dock, in workstations and in the
+  Mission Control timeline; they bob on idle, pulse/scan while working,
+  glow on complete, and show an error state — driven by REAL status only.
+- **Backend architecture unchanged:** same Streamlit framework, same
+  5-agent pipeline ARIA → RAVEN → VULCAN → CIPHER → ORACLE, same Groq
+  model and 12 tools, same `run_osint_audit` data flow, same findings /
+  risk / JSON / PDF features (v1 PDF fix preserved).
+- **Real activity, no simulation:** Mission Control and the Live Activity
+  panel stay always-visible and are driven only by real orchestrator
+  callbacks / session state. Idle honestly says standby.
+
 ## UI — `ui-v2-radical-animated` branch (v2, replaces the v1 look)
 
 V1 kept the old cyan-blue hero and layout, so on idle it looked almost

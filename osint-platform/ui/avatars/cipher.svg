@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="CIPHER, Email OSINT Agent">
+  <title>CIPHER — Email OSINT Agent</title>
+  <circle cx="120" cy="120" r="112" fill="#101A05"/>
+  <circle cx="120" cy="120" r="112" fill="none" stroke="#C6FF3D" stroke-width="5"/>
+  <circle cx="120" cy="120" r="96" fill="#C6FF3D" opacity="0.10"/>
+  <!-- circuit antennae -->
+  <line x1="88" y1="62" x2="72" y2="36" stroke="#C6FF3D" stroke-width="4" stroke-linecap="round"/>
+  <line x1="152" y1="62" x2="168" y2="36" stroke="#C6FF3D" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="70" cy="34" r="7" fill="#C6FF3D"/>
+  <circle cx="170" cy="34" r="7" fill="#C6FF3D"/>
+  <!-- round decoder head -->
+  <circle cx="120" cy="118" r="62" fill="#1E2A0E" stroke="#C6FF3D" stroke-width="4"/>
+  <circle cx="120" cy="118" r="50" fill="none" stroke="#C6FF3D" stroke-width="1.5" opacity="0.5"/>
+  <!-- code eyes -->
+  <rect x="88" y="104" width="26" height="20" rx="5" fill="#C6FF3D"/>
+  <rect x="126" y="104" width="26" height="20" rx="5" fill="#C6FF3D"/>
+  <text x="101" y="119" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#0B0514">&lt;</text>
+  <text x="139" y="119" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold" fill="#0B0514">&gt;</text>
+  <!-- mouth: signal bars -->
+  <rect x="96" y="142" width="8" height="12" rx="2" fill="#E6FFB0"/>
+  <rect x="108" y="138" width="8" height="16" rx="2" fill="#C6FF3D"/>
+  <rect x="120" y="142" width="8" height="12" rx="2" fill="#E6FFB0"/>
+  <rect x="132" y="136" width="8" height="18" rx="2" fill="#C6FF3D"/>
+  <!-- envelope chest -->
+  <rect x="84" y="182" width="72" height="28" rx="6" fill="#0B0514" stroke="#C6FF3D" stroke-width="3"/>
+  <path d="M84 188 L120 204 L156 188" fill="none" stroke="#C6FF3D" stroke-width="3"/>
+  <text x="120" y="226" text-anchor="middle" font-family="monospace" font-size="11" fill="#E6FFB0" letter-spacing="2">CIPHER</text>
+</svg>

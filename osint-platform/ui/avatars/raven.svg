@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="RAVEN, Threat Intelligence Agent">
+  <title>RAVEN — Threat Intelligence Agent</title>
+  <circle cx="120" cy="120" r="112" fill="#150A26"/>
+  <circle cx="120" cy="120" r="112" fill="none" stroke="#A78BFA" stroke-width="5"/>
+  <circle cx="120" cy="120" r="96" fill="#A78BFA" opacity="0.12"/>
+  <!-- cloak / hood -->
+  <path d="M120 34 C74 34 54 74 54 118 L54 176 L88 164 L88 214 L152 214 L152 164 L186 176 L186 118 C186 74 166 34 120 34 Z" fill="#2A1A4D" stroke="#A78BFA" stroke-width="4"/>
+  <path d="M120 34 C88 34 70 62 66 100 L120 82 L174 100 C170 62 152 34 120 34 Z" fill="#3B2A6E"/>
+  <!-- shadow face -->
+  <ellipse cx="120" cy="112" rx="42" ry="38" fill="#0B0514"/>
+  <!-- sharp hunter eyes -->
+  <polygon points="88,106 108,100 108,114 88,118" fill="#C4B5FD"/>
+  <polygon points="152,106 132,100 132,114 152,118" fill="#C4B5FD"/>
+  <circle cx="99" cy="107" r="4" fill="#FFFFFF"/>
+  <circle cx="141" cy="107" r="4" fill="#FFFFFF"/>
+  <!-- beak-like shadow / mouth -->
+  <path d="M108 138 L120 148 L132 138" fill="none" stroke="#A78BFA" stroke-width="4" stroke-linecap="round"/>
+  <!-- feather accents -->
+  <path d="M62 150 Q48 170 58 190" fill="none" stroke="#A78BFA" stroke-width="4" stroke-linecap="round"/>
+  <path d="M178 150 Q192 170 182 190" fill="none" stroke="#A78BFA" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="120" cy="188" r="10" fill="#A78BFA"/>
+  <text x="120" y="208" text-anchor="middle" font-family="monospace" font-size="12" fill="#E9D5FF" letter-spacing="3">RAVEN</text>
+</svg>
