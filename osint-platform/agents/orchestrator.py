@@ -95,9 +95,16 @@ def _timeline_markup(summary):
             node_class = "node-queued"
             mark = str(index + 1)
         tools = summary["tool_counts"].get(agent_key, 0)
+        try:
+            from ui.avatars import avatar_html as _avatar_html
+
+            _mini = _avatar_html(agent_key, status, size=30)
+        except Exception:
+            _mini = ""
         nodes.append(
             '<div class="tl-node ' + node_class + '">'
-            '<span class="tl-mark" style="--agent-accent:' + _escape(agent.get("color", "#FF2E88")) + '">' + mark + "</span>"
+            + _mini
+            + '<span class="tl-mark" style="--agent-accent:' + _escape(agent.get("color", "#FF2E88")) + '">' + mark + "</span>"
             '<span class="tl-name">' + _escape(agent.get("name", agent_key)) + "</span>"
             '<span class="tl-meta">' + _escape(STATUS_LABELS.get(status, status).title()) + " · " + str(tools) + " tools</span>"
             "</div>"
@@ -183,16 +190,19 @@ def _save_agent_state(agent_key, status, activity_log, elapsed=None):
     st.session_state["nexus_latest_activity"] = saved
 
 
-def _avatar_markup():
-    return (
-        '<div class="agent-avatar" aria-hidden="true">'
-        '<span class="agent-avatar-orbit"></span>'
-        '<span class="agent-avatar-satellite"></span>'
-        '<span class="agent-avatar-core"><span class="agent-avatar-eyes"><i></i><i></i></span>'
-        '<span class="agent-avatar-mouth"></span></span>'
-        '<span class="agent-avatar-scan"></span>'
-        '</div>'
-    )
+def _avatar_markup(agent_key="aria", status="queued"):
+    """v3: the agent's committed SVG character portrait, not an abstract dot.
+
+    Status drives the CSS animation class only; the portrait file itself
+    is static art in ui/avatars/<agent>.svg.
+    """
+    try:
+        from ui.avatars import avatar_html
+
+        return '<div class="agent-avatar">' + avatar_html(agent_key, status, size=64) + "</div>"
+    except Exception:
+        # Never let a portrait failure break a workstation render.
+        return '<div class="agent-avatar" aria-hidden="true"></div>'
 
 
 def render_agent_workstation(agent_key, status="queued", activity_log=None, elapsed=None):
@@ -228,7 +238,7 @@ def render_agent_workstation(agent_key, status="queued", activity_log=None, elap
         '<article class="agent-console status-' + _escape(status) + '" style="--agent-accent:' + _escape(accent) + '">'
         '<div class="agent-console-topline"></div>'
         '<header class="agent-console-header">'
-        + _avatar_markup() +
+        + _avatar_markup(agent_key, status) +
         '<div class="agent-heading">'
         '<div class="agent-name-row"><h3>' + _escape(agent.get("name", agent_key)) + '</h3>'
         '<span class="agent-status"><i></i>' + _escape(status_label) + '</span></div>'

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="ARIA, Domain Recon Agent">
+  <title>ARIA — Domain Recon Agent</title>
+  <circle cx="120" cy="120" r="112" fill="#1E0A2E"/>
+  <circle cx="120" cy="120" r="112" fill="none" stroke="#FF2E88" stroke-width="5"/>
+  <circle cx="120" cy="120" r="96" fill="#FF2E88" opacity="0.12"/>
+  <!-- radar antenna -->
+  <line x1="168" y1="58" x2="192" y2="30" stroke="#FF2E88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="196" cy="26" r="9" fill="#FF2E88"/>
+  <path d="M188 52 A34 34 0 0 1 214 26" fill="none" stroke="#FF2E88" stroke-width="4" stroke-linecap="round"/>
+  <path d="M176 66 A52 52 0 0 1 226 16" fill="none" stroke="#FF2E88" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <!-- shoulders -->
+  <path d="M52 214 L88 172 L152 172 L188 214 Z" fill="#3A1230"/>
+  <path d="M88 172 L152 172 L142 214 L98 214 Z" fill="#FF2E88" opacity="0.22"/>
+  <!-- helmet head -->
+  <rect x="68" y="62" width="104" height="108" rx="34" fill="#2B0F3D" stroke="#FF2E88" stroke-width="4"/>
+  <rect x="68" y="62" width="104" height="108" rx="34" fill="none" stroke="#FF2E88" stroke-width="2" opacity="0.4"/>
+  <!-- visor -->
+  <rect x="82" y="100" width="76" height="30" rx="15" fill="#FF2E88"/>
+  <circle cx="102" cy="115" r="8" fill="#0B0514"/>
+  <circle cx="138" cy="115" r="8" fill="#0B0514"/>
+  <circle cx="105" cy="112" r="3" fill="#FFFFFF"/>
+  <circle cx="141" cy="112" r="3" fill="#FFFFFF"/>
+  <!-- scan line -->
+  <line x1="82" y1="130" x2="158" y2="130" stroke="#FFFFFF" stroke-width="2" opacity="0.7"/>
+  <!-- mouth / comm -->
+  <rect x="104" y="148" width="32" height="5" rx="2.5" fill="#FFD7EA"/>
+  <circle cx="84" cy="152" r="6" fill="#FF2E88"/>
+  <text x="120" y="202" text-anchor="middle" font-family="monospace" font-size="13" fill="#FFD7EA" letter-spacing="3">ARIA</text>
+</svg>

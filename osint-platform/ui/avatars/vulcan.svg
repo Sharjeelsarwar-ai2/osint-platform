@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="VULCAN, Attack Surface Agent">
+  <title>VULCAN — Attack Surface Agent</title>
+  <circle cx="120" cy="120" r="112" fill="#1F1204"/>
+  <circle cx="120" cy="120" r="112" fill="none" stroke="#FFB020" stroke-width="5"/>
+  <circle cx="120" cy="120" r="96" fill="#FFB020" opacity="0.12"/>
+  <!-- angular helmet -->
+  <polygon points="120,42 178,72 178,138 120,176 62,138 62,72" fill="#33200A" stroke="#FFB020" stroke-width="4"/>
+  <polygon points="120,42 178,72 178,96 120,72 62,96 62,72" fill="#FFB020" opacity="0.28"/>
+  <!-- visor grid -->
+  <rect x="78" y="100" width="84" height="34" rx="6" fill="#FFB020"/>
+  <line x1="99" y1="100" x2="99" y2="134" stroke="#1F1204" stroke-width="3"/>
+  <line x1="120" y1="100" x2="120" y2="134" stroke="#1F1204" stroke-width="3"/>
+  <line x1="141" y1="100" x2="141" y2="134" stroke="#1F1204" stroke-width="3"/>
+  <circle cx="89" cy="117" r="5" fill="#0B0514"/>
+  <circle cx="110" cy="117" r="5" fill="#0B0514"/>
+  <circle cx="131" cy="117" r="5" fill="#0B0514"/>
+  <circle cx="152" cy="117" r="5" fill="#0B0514"/>
+  <!-- jaw / bolt -->
+  <polygon points="120,150 130,168 116,168 124,186 104,166 116,166" fill="#FFB020"/>
+  <!-- armoured shoulders -->
+  <path d="M44 214 L76 182 L164 182 L196 214 Z" fill="#33200A" stroke="#FFB020" stroke-width="3"/>
+  <rect x="84" y="192" width="18" height="10" rx="3" fill="#FFB020"/>
+  <rect x="138" y="192" width="18" height="10" rx="3" fill="#FFB020"/>
+  <text x="120" y="208" text-anchor="middle" font-family="monospace" font-size="12" fill="#FFE9B0" letter-spacing="2">VULCAN</text>
+</svg>
