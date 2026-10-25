@@ -71,6 +71,39 @@ def get_css():
     @keyframes signal-pulse{0%,100%{opacity:.55;transform:scale(.88)}50%{opacity:1;transform:scale(1.16)}}@keyframes avatar-orbit{to{transform:rotate(342deg)}}@keyframes avatar-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}@keyframes avatar-glow{0%,100%{filter:brightness(.93);box-shadow:0 0 4px color-mix(in srgb,var(--agent-accent) 14%,transparent)}50%{filter:brightness(1.3);box-shadow:0 0 15px color-mix(in srgb,var(--agent-accent) 35%,transparent)}}@keyframes avatar-scan{0%{transform:translateY(0);opacity:0}18%{opacity:.9}82%{opacity:.9}100%{transform:translateY(26px);opacity:0}}@keyframes fade-up{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
     @media(max-width:850px){.block-container{padding:1.1rem 1rem 2rem}.metric-row{grid-template-columns:repeat(2,1fr)}.agent-roster{grid-template-columns:repeat(2,1fr)}.section-heading{align-items:start;flex-direction:column}}
     @media(max-width:520px){.nx-live{font-size:.55rem}.nx-hero{padding-top:1.7rem}.agent-roster{grid-template-columns:1fr 1fr}.operation-count{display:none}.nx-footer{gap:.6rem;flex-direction:column}.agent-event{grid-template-columns:42px 46px minmax(0,1fr);gap:.3rem}.agent-avatar{width:42px;height:42px;flex-basis:42px}}
+    /* ===== Advanced animated layer (presentation only) ===== */
+    .stApp{background:radial-gradient(ellipse 900px 480px at 12% -10%,rgba(71,200,232,.20),transparent 60%),radial-gradient(ellipse 800px 420px at 88% 8%,rgba(167,139,250,.16),transparent 60%),radial-gradient(ellipse at 50% -22%,rgba(33,94,132,.22),transparent 52%),var(--bg)}
+    .nx-title span{background:linear-gradient(92deg,#47c8e8,#8ca8ff,#55d6a5,#47c8e8);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:gradient-slide 7s ease-in-out infinite}
+    @keyframes gradient-slide{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+    .metric-card{position:relative;overflow:hidden;transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
+    .metric-card:before{content:'';position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,rgba(71,200,232,.10) 50%,transparent 70%);transform:translateX(-120%);transition:transform .7s ease}
+    .metric-card:hover{transform:translateY(-3px);border-color:rgba(71,200,232,.45);box-shadow:0 12px 30px rgba(0,0,0,.35)}
+    .metric-card:hover:before{transform:translateX(120%)}
+    .roster-card{position:relative;overflow:hidden;animation:fade-up .45s ease-out both}
+    .roster-card:nth-child(2){animation-delay:.06s}.roster-card:nth-child(3){animation-delay:.12s}.roster-card:nth-child(4){animation-delay:.18s}.roster-card:nth-child(5){animation-delay:.24s}
+    .roster-card:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(0,0,0,.35)}
+    .roster-card:after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--agent-accent),transparent);opacity:.7}
+    .roster-icon{font-size:1.15rem;line-height:1}.roster-catch{color:#8fa5b6;font-size:.62rem;line-height:1.5;margin-top:.35rem;font-style:italic}.roster-status{margin-top:.5rem;color:#5f7487;font:500 .52rem 'DM Mono',monospace;letter-spacing:.12em}
+    .agent-console{animation:fade-up .35s ease-out both}
+    .agent-console.status-thinking,.agent-console.status-executing,.agent-console.status-finalizing{animation:console-breathe 2.2s ease-in-out infinite}
+    @keyframes console-breathe{0%,100%{box-shadow:0 0 14px color-mix(in srgb,var(--agent-accent) 8%,transparent)}50%{box-shadow:0 0 30px color-mix(in srgb,var(--agent-accent) 20%,transparent)}}
+    .agent-feed{scroll-behavior:smooth}
+    .agent-event:nth-child(odd){background:rgba(255,255,255,.012)}
+    /* Mission control */
+    .mission-control{border:1px solid #223242;border-radius:14px;padding:1.05rem 1.15rem 1rem;margin:1rem 0 1.4rem;background:linear-gradient(150deg,rgba(17,28,40,.97),rgba(10,17,26,.96));box-shadow:0 18px 44px rgba(0,0,0,.30);animation:fade-up .4s ease-out both;position:relative;overflow:hidden}
+    .mission-control:before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#47c8e8,#a78bfa,#55d6a5,transparent);background-size:200% 100%;animation:gradient-slide 6s linear infinite}
+    .mission-live{border-color:rgba(71,200,232,.45);box-shadow:0 0 0 1px rgba(71,200,232,.12),0 18px 44px rgba(0,0,0,.35)}
+    .mission-head{display:flex;justify-content:space-between;align-items:end;gap:1rem}.mission-head h2{font-size:1.15rem;margin:.2rem 0 0}
+    .mission-live-label{color:#8fa5b6;font:500 .58rem 'DM Mono',monospace;letter-spacing:.1em}.mission-live .mission-live-label{color:#55d6a5;animation:signal-pulse 1.6s ease-in-out infinite}
+    .mission-target{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin:.8rem 0 .6rem;padding:.6rem .75rem;border:1px solid #1b2a38;border-radius:8px;background:#0a1119;font-size:.68rem;color:#a8bbc9}.mission-target strong{color:#e5eef6}.mission-target span{color:#8193a2;font-family:'DM Mono',monospace;font-size:.6rem}
+    .mission-progress{display:flex;align-items:center;gap:.8rem;margin:.2rem 0 .9rem}.mission-progress-track{flex:1;height:8px;border-radius:99px;background:#16222f;overflow:hidden}.mission-progress-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#47c8e8,#a78bfa,#55d6a5);background-size:200% 100%;animation:gradient-slide 4s linear infinite;transition:width .6s ease}.mission-progress-pct{color:#e5eef6;font:700 .72rem 'DM Mono',monospace;min-width:38px;text-align:right}
+    .mission-timeline{display:flex;align-items:stretch;gap:.3rem;margin:.2rem 0 1rem;flex-wrap:wrap}.tl-node{flex:1;min-width:110px;border:1px solid #1d2a38;border-radius:9px;padding:.55rem .6rem;background:rgba(10,17,25,.8);transition:transform .18s ease,border-color .18s ease}.tl-node:hover{transform:translateY(-2px)}.tl-mark{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--agent-accent);color:var(--agent-accent);font-size:.6rem;font-weight:800;margin-bottom:.3rem}.tl-name{display:block;color:#e5eef6;font-weight:800;font-size:.68rem;letter-spacing:.05em}.tl-meta{display:block;color:#8193a2;font-size:.58rem;margin-top:.15rem}.tl-node.node-done{border-color:rgba(85,214,165,.35)}.tl-node.node-done .tl-mark{background:rgba(85,214,165,.15);color:#55d6a5;border-color:rgba(85,214,165,.5)}.tl-node.node-current{border-color:color-mix(in srgb,var(--agent-accent) 50%,#1d2a38);box-shadow:0 0 18px rgba(71,200,232,.12);animation:console-breathe 2.2s ease-in-out infinite}.tl-node.node-current .tl-mark{animation:signal-pulse 1.2s ease-in-out infinite}.tl-node.node-error{border-color:rgba(255,115,115,.45)}.tl-node.node-error .tl-mark{color:#ff7373;border-color:#ff7373}.tl-connector{flex:0 0 14px;align-self:center;height:1px;background:#263746}
+    .mission-feed-heading{display:flex;justify-content:space-between;color:#728598;font:500 .52rem 'DM Mono',monospace;letter-spacing:.1em;margin-bottom:.4rem}.mission-feed{max-height:340px;overflow-y:auto;padding-right:.4rem;scrollbar-width:thin;scrollbar-color:#314657 transparent;border-top:1px solid rgba(34,49,64,.58)}
+    .feed-row{display:grid;grid-template-columns:52px 62px 62px minmax(0,1fr);gap:.42rem;align-items:start;padding:.42rem 0;border-bottom:1px solid rgba(34,49,64,.45);animation:fade-up .2s ease-out both}.feed-row time{color:#677c90;font:400 .53rem 'DM Mono',monospace;padding-top:.13rem}.feed-agent{color:var(--agent-accent);font:500 .52rem 'DM Mono',monospace;letter-spacing:.04em}.feed-text{color:#b9c6d2;font-size:.61rem;line-height:1.48;overflow-wrap:anywhere}.mission-feed-empty{color:#718395;padding:.6rem 0;font-size:.64rem;line-height:1.6}
+    /* Idle standby panel + report downloads */
+    .idle-panel{border:1px dashed #2a3c4c;border-radius:12px;padding:1.1rem 1.2rem;margin:1rem 0 1.4rem;background:rgba(13,20,30,.55);animation:fade-up .4s ease-out both}.idle-panel strong{display:block;color:#dce7ef;font-size:.82rem}.idle-panel span{display:block;color:#8193a2;font-size:.68rem;line-height:1.6;margin-top:.3rem}
+    .download-row{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:.7rem 0 1rem}
+    @media(max-width:850px){.mission-timeline{flex-direction:column}.tl-connector{display:none}.feed-row{grid-template-columns:42px 52px 52px minmax(0,1fr)}.download-row{grid-template-columns:1fr}}
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
     </style>
     """
@@ -115,10 +148,27 @@ def render_agent_showcase():
         markup += (
             '<div class="roster-card" style="--agent-accent:' + _escape(agent["color"]) + '">'
             '<div class="roster-code">SPECIALIST / ' + f'{index:02d}' + '</div>'
+            '<div class="roster-icon">' + _escape(agent.get("icon", "")) + '</div>'
             '<div class="roster-name">' + _escape(agent["name"]) + '</div>'
-            '<div class="roster-role">' + _escape(agent["role"]) + '</div></div>'
+            '<div class="roster-role">' + _escape(agent["role"]) + '</div>'
+            '<div class="roster-catch">“' + _escape(agent.get("catchphrase", "")) + '”</div>'
+            '<div class="roster-status">● STANDBY</div></div>'
         )
     st.markdown(markup + '</div>', unsafe_allow_html=True)
+
+
+def render_idle_state():
+    """Honest standby panel: agents are idle until a real scan starts.
+
+    No simulated activity, no fake pulses pretending work is happening.
+    """
+    st.markdown(
+        '<div class="idle-panel"><strong>No operation running — specialists on standby</strong>'
+        '<span>Enter an authorized target above and run a scan. Mission Control will then '
+        'show each agent working in real time: its status, the exact tools it executes, '
+        'and a chronological activity feed. Until then, nothing here moves as if it were working.</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def extract_risk_score(text):
@@ -254,13 +304,32 @@ def render_report(report):
         "model": MODEL_NAME,
         "findings": results,
     }
-    st.download_button(
-        "Download full report · JSON",
-        data=json.dumps(export, indent=2, ensure_ascii=False, default=str),
-        file_name="nexus_" + re.sub(r"[^A-Za-z0-9_-]+", "_", target).strip("_") + ".json",
-        mime="application/json",
-        use_container_width=True,
-    )
+    col_json, col_pdf = st.columns(2)
+    with col_json:
+        st.download_button(
+            "Download full report · JSON",
+            data=json.dumps(export, indent=2, ensure_ascii=False, default=str),
+            file_name="nexus_" + re.sub(r"[^A-Za-z0-9_-]+", "_", target).strip("_") + ".json",
+            mime="application/json",
+            use_container_width=True,
+        )
+    with col_pdf:
+        # Previously dead code: generate_pdf looked up task keys that
+        # never exist in agent-keyed results, so it exported a blank PDF.
+        # The mapping is fixed in utils/pdf_generator.py; wire it here.
+        try:
+            from utils.pdf_generator import generate_pdf
+
+            pdf_bytes = generate_pdf(results)
+            st.download_button(
+                "Download report · PDF",
+                data=pdf_bytes,
+                file_name="nexus_" + re.sub(r"[^A-Za-z0-9_-]+", "_", target).strip("_") + ".pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as exc:
+            st.warning(f"PDF export unavailable: {type(exc).__name__}: {exc}")
 
 
 def main():
@@ -302,6 +371,11 @@ def main():
         else:
             activity_rendered = True
             started = time.time()
+            # FIX: a previous report stayed visible under the new live
+            # consoles until the new run finished, which looked like
+            # the old findings belonged to the new target. Clear it
+            # before the run; it is rebuilt from the new results below.
+            st.session_state["nexus_latest_report"] = None
             try:
                 results = run_osint_audit(target.strip(), target_type.lower())
                 st.session_state["nexus_latest_report"] = {
@@ -316,6 +390,13 @@ def main():
 
     if not activity_rendered:
         render_saved_agent_workstations()
+
+    if (
+        not activity_rendered
+        and not st.session_state.get("nexus_latest_activity")
+        and not st.session_state.get("nexus_latest_report")
+    ):
+        render_idle_state()
 
     latest_report = st.session_state.get("nexus_latest_report")
     if latest_report:

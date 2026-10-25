@@ -45,6 +45,129 @@ EVENT_LABELS = {
     "error": "ERR",
 }
 
+# Presentation only: derived from the *real* per-agent activity logs and
+# tool counts produced by run_osint_audit. Nothing here runs an agent,
+# invents activity, or changes the pipeline. It is pure (no Streamlit
+# access) so it can be unit-tested.
+FINISHED_STATUSES = ("complete", "fallback", "error")
+
+
+def summarize_operation(activity, global_activity, operation):
+    """Summarise real operation state for the mission-control panel."""
+    activity = activity or {}
+    global_activity = global_activity or []
+    operation = operation or {}
+    tool_counts = operation.get("tool_counts", {}) or {}
+    statuses = {}
+    for agent_key, _, _ in PIPELINE:
+        statuses[agent_key] = (activity.get(agent_key, {}) or {}).get("status", "queued")
+    finished = [key for key, status in statuses.items() if status in FINISHED_STATUSES]
+    succeeded = [key for key, status in statuses.items() if status == "complete"]
+    total_tools = sum(int(tool_counts.get(key, 0) or 0) for key, _, _ in PIPELINE)
+    progress = round(100 * len(finished) / len(PIPELINE)) if PIPELINE else 0
+    return {
+        "target": operation.get("target", ""),
+        "status": operation.get("status", "idle"),
+        "current_agent": operation.get("current_agent"),
+        "statuses": statuses,
+        "finished": finished,
+        "succeeded": succeeded,
+        "progress": progress,
+        "total_tools": total_tools,
+        "tool_counts": tool_counts,
+        "event_count": len(global_activity),
+        "elapsed": operation.get("elapsed"),
+    }
+
+
+def _timeline_markup(summary):
+    nodes = []
+    for index, (agent_key, _, _) in enumerate(PIPELINE):
+        agent = AGENT_PROFILES[agent_key]
+        status = summary["statuses"][agent_key]
+        if status in FINISHED_STATUSES:
+            node_class = "node-error" if status == "error" else "node-done"
+            mark = "✕" if status == "error" else "✓"
+        elif agent_key == summary["current_agent"] and summary["status"] == "running":
+            node_class = "node-current"
+            mark = "●"
+        else:
+            node_class = "node-queued"
+            mark = str(index + 1)
+        tools = summary["tool_counts"].get(agent_key, 0)
+        nodes.append(
+            '<div class="tl-node ' + node_class + '">'
+            '<span class="tl-mark" style="--agent-accent:' + _escape(agent.get("color", "#43c6e8")) + '">' + mark + "</span>"
+            '<span class="tl-name">' + _escape(agent.get("name", agent_key)) + "</span>"
+            '<span class="tl-meta">' + _escape(STATUS_LABELS.get(status, status).title()) + " · " + str(tools) + " tools</span>"
+            "</div>"
+            + ('<span class="tl-connector"></span>' if index < len(PIPELINE) - 1 else "")
+        )
+    return "".join(nodes)
+
+
+def render_global_feed_html(global_activity, limit=40):
+    """Chronological feed of real events only (newest last, scrollable)."""
+    events = list(global_activity or [])[-limit:]
+    if not events:
+        return (
+            '<div class="mission-feed-empty">No live operation yet. '
+            "Activity will appear here — event by event, as agents actually run — "
+            "when a scan starts. Nothing here is simulated.</div>"
+        )
+    rows = []
+    for event in events:
+        agent = AGENT_PROFILES.get(event.get("agent", ""), {})
+        rows.append(
+            '<div class="feed-row">'
+            "<time>" + _escape(event.get("time", "")) + "</time>"
+            '<span class="feed-agent" style="--agent-accent:' + _escape(agent.get("color", "#43c6e8")) + '">'
+            + _escape(agent.get("name", event.get("agent", ""))) + "</span>"
+            '<span class="event-tag event-' + _escape(event.get("type", "system")) + '">'
+            + _escape(EVENT_LABELS.get(event.get("type", "system"), "LOG")) + "</span>"
+            '<span class="feed-text">' + _escape(event.get("text", "")) + "</span>"
+            "</div>"
+        )
+    return "".join(rows)
+
+
+def render_mission_control():
+    """Mission-control panel: pipeline timeline + live stats + global feed.
+
+    Reads only session state written by run_osint_audit from real
+    activity callbacks. When idle it honestly shows 0% / queued / empty.
+    """
+    activity = st.session_state.get("nexus_latest_activity", {})
+    global_activity = st.session_state.get("nexus_global_activity", [])
+    operation = st.session_state.get("nexus_operation", {})
+    summary = summarize_operation(activity, global_activity, operation)
+    running = summary["status"] == "running"
+    elapsed = summary["elapsed"]
+    if elapsed is None and operation.get("started_at"):
+        elapsed = time.time() - operation["started_at"]
+    elapsed_text = f"{elapsed:.1f}s" if elapsed is not None else "—"
+    live_class = " mission-live" if running else ""
+    live_label = "● LIVE — AGENTS WORKING" if running else "STANDBY — NO OPERATION RUNNING"
+    target_text = summary["target"] or "No target yet"
+    return (
+        '<section class="mission-control' + live_class + '">'
+        '<div class="mission-head"><div><span class="section-kicker">MISSION CONTROL</span>'
+        '<h2>Live operation</h2></div>'
+        '<span class="mission-live-label">' + live_label + "</span></div>"
+        '<div class="mission-target">TARGET · <strong>' + _escape(target_text) + "</strong>"
+        '<span>' + str(len(summary["succeeded"])) + "/" + str(len(PIPELINE)) + " agents complete · "
+        + str(summary["total_tools"]) + " tools executed · "
+        + str(summary["event_count"]) + " events · " + elapsed_text + "</span></div>"
+        '<div class="mission-progress"><div class="mission-progress-track">'
+        '<div class="mission-progress-fill" style="width:' + str(summary["progress"]) + '%"></div></div>'
+        '<span class="mission-progress-pct">' + str(summary["progress"]) + "%</span></div>"
+        '<div class="mission-timeline">' + _timeline_markup(summary) + "</div>"
+        '<div class="mission-feed-heading"><span>GLOBAL ACTIVITY FEED — ALL AGENTS, IN REAL TIME</span>'
+        "<span>" + str(summary["event_count"]) + " EVENTS</span></div>"
+        '<div class="mission-feed">' + render_global_feed_html(global_activity) + "</div>"
+        "</section>"
+    )
+
 
 def _escape(value):
     return html.escape(str(value), quote=True)
@@ -127,8 +250,11 @@ def render_saved_agent_workstations():
     saved = st.session_state.get("nexus_latest_activity", {})
     if not saved:
         return
+    # Mission control first: pipeline state + the real global feed,
+    # so a saved run still shows what actually happened, in order.
+    st.markdown(render_mission_control(), unsafe_allow_html=True)
     st.markdown(
-        '<div class="section-heading"><div><span>01 / LAST OPERATION</span>'
+        '<div class="section-heading"><div><span class="section-kicker">01 / LAST OPERATION</span>'
         '<h2>Agent workstations</h2></div><span>Animated status · full tool and activity history retained</span></div>',
         unsafe_allow_html=True,
     )
@@ -168,7 +294,16 @@ def run_osint_audit(target, target_type):
     tool_counts = {agent_key: 0 for agent_key, _, _ in PIPELINE}
     started_at = time.time()
     st.session_state["nexus_latest_activity"] = {}
+    st.session_state["nexus_global_activity"] = []
     st.session_state["nexus_activity_target"] = str(target)
+    st.session_state["nexus_operation"] = {
+        "target": str(target),
+        "status": "running",
+        "current_agent": None,
+        "tool_counts": tool_counts,
+        "started_at": started_at,
+        "elapsed": None,
+    }
 
     st.markdown(
         '<div class="operation-banner"><span class="operation-indicator"></span>'
@@ -177,6 +312,9 @@ def run_osint_audit(target, target_type):
         '<span class="operation-count">05 SPECIALISTS</span></div>',
         unsafe_allow_html=True,
     )
+    # Live mission control, updated on every real activity event below.
+    mission_slot = st.empty()
+    mission_slot.markdown(render_mission_control(), unsafe_allow_html=True)
     st.markdown(
         '<div class="section-heading"><div><span>01 / LIVE OPERATIONS</span>'
         '<h2>Agent workstations</h2></div><span>Watch each animated specialist and see exactly which tools run</span></div>',
@@ -205,6 +343,16 @@ def run_osint_audit(target, target_type):
             }
             event.update(details)
             activity_log.append(event)
+            # Global feed: the same real event, tagged with its agent.
+            # This is the only source of the mission-control feed — no
+            # simulated or timer-driven events are ever added.
+            global_log = list(st.session_state.get("nexus_global_activity", []))
+            global_log.append({**event, "agent": agent_key})
+            st.session_state["nexus_global_activity"] = global_log
+            operation_state = dict(st.session_state.get("nexus_operation", {}))
+            operation_state["current_agent"] = agent_key
+            operation_state["tool_counts"] = tool_counts
+            st.session_state["nexus_operation"] = operation_state
             if event_type == "error":
                 state["status"] = "error"
             elif event_type == "fallback":
@@ -217,6 +365,7 @@ def run_osint_audit(target, target_type):
                 time.time() - agent_start,
             )
             _save_agent_state(agent_key, state["status"], activity_log, time.time() - agent_start)
+            mission_slot.markdown(render_mission_control(), unsafe_allow_html=True)
 
         append_event("system", f"{agent['name']} initialized for {task.replace('_', ' ')}.")
 
@@ -323,6 +472,13 @@ def run_osint_audit(target, target_type):
             append_event("error", finding[:260])
 
     completed = sum(1 for value in results.values() if value.strip())
+    operation_state = dict(st.session_state.get("nexus_operation", {}))
+    operation_state["status"] = "complete"
+    operation_state["current_agent"] = None
+    operation_state["tool_counts"] = tool_counts
+    operation_state["elapsed"] = time.time() - started_at
+    st.session_state["nexus_operation"] = operation_state
+    mission_slot.markdown(render_mission_control(), unsafe_allow_html=True)
     st.markdown(
         '<div class="operation-complete"><span class="complete-mark">✓</span>'
         '<div><strong>OPERATION COMPLETE</strong><span>'
