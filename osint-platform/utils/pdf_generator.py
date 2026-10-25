@@ -1,6 +1,6 @@
 import re
 import io
-from fpdf import FPDF
+from fpdf import FPDF, XPos, YPos
 
 
 class OSINTReportPDF(FPDF):
@@ -11,7 +11,7 @@ class OSINTReportPDF(FPDF):
     def header(self):
         self.set_font("Helvetica", "B", 14)
         self.set_text_color(0, 180, 150)
-        self.cell(0, 10, "OSINT AI - Threat Intelligence Report", ln=True, align="C")
+        self.cell(0, 10, "OSINT AI - Threat Intelligence Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
         self.set_draw_color(0, 180, 150)
         self.line(10, self.get_y(), 200, self.get_y())
         self.ln(5)
@@ -26,7 +26,7 @@ class OSINTReportPDF(FPDF):
         self.add_page()
         self.set_font("Helvetica", "B", 14)
         self.set_text_color(0, 180, 150)
-        self.cell(0, 10, title, ln=True)
+        self.cell(0, 10, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.ln(3)
         self.set_font("Helvetica", "", 9)
         self.set_text_color(40, 40, 40)
@@ -41,17 +41,25 @@ class OSINTReportPDF(FPDF):
             self.multi_cell(0, 5, line)
 
 
+# FIX (was dead/broken): run_osint_audit returns agent-keyed results
+# (aria/raven/vulcan/cipher/oracle), but generate_pdf previously looked
+# up legacy task keys (final_report/domain_recon/...) that never exist,
+# so a real report exported as an empty PDF. Map the real keys here.
+# Architecture unchanged: same function, same sections, correct source.
+SECTION_AGENT_KEYS = [
+    ("Executive Summary", "oracle"),
+    ("Domain Reconnaissance", "aria"),
+    ("Threat Intelligence", "raven"),
+    ("Attack Surface Analysis", "vulcan"),
+    ("Email OSINT", "cipher"),
+]
+
+
 def generate_pdf(results: dict) -> bytes:
     pdf = OSINTReportPDF()
     pdf.alias_nb_pages()
-    sections = [
-        ("Executive Summary", results.get("final_report", "")),
-        ("Domain Reconnaissance", results.get("domain_recon", "")),
-        ("Threat Intelligence", results.get("threat_intel", "")),
-        ("Attack Surface Analysis", results.get("attack_surface", "")),
-        ("Email OSINT", results.get("email_osint", ""))
-    ]
-    for title, content in sections:
+    for title, agent_key in SECTION_AGENT_KEYS:
+        content = results.get(agent_key, "")
         if content:
             pdf.add_section(title, content)
     buffer = io.BytesIO()
