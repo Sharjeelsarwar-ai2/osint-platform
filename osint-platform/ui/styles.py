@@ -124,6 +124,12 @@ def get_css():
         @keyframes console-breathe{0%,100%{box-shadow:0 0 14px rgba(255,46,136,.08)}50%{box-shadow:0 0 30px rgba(255,46,136,.22)}}
         @media(max-width:850px){.block-container{padding:1.1rem 1rem 2rem}.metric-row{grid-template-columns:repeat(2,1fr)}.mission-timeline{flex-direction:column}.tl-connector{display:none}.feed-row{grid-template-columns:42px 52px 52px minmax(0,1fr)}}
         @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+        /* ---- agent report tabs (Neon Noir, not the old expander list) ---- */
+        div[data-testid="stTabs"] button[data-baseweb="tab"]{background:#160a2a!important;border:1px solid #3b1f5e!important;border-bottom:none!important;border-radius:12px 12px 0 0!important;color:#c4b5d6!important;font:700 .68rem 'DM Mono',monospace!important;letter-spacing:.08em!important;padding:.6rem 1rem!important;margin-right:.3rem!important}
+        div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"]{background:linear-gradient(120deg,#ff2e88,#8b5cf6)!important;color:#fff!important;border-color:#ff2e88!important;box-shadow:0 -6px 22px rgba(255,46,136,.35)!important}
+        div[data-testid="stTabs"] div[data-baseweb="tab-panel"]{background:linear-gradient(160deg,rgba(30,15,56,.96),rgba(18,8,31,.96));border:1px solid #3b1f5e;border-radius:0 16px 16px 16px;padding:1.2rem 1.3rem}
+        div[data-testid="stTabs"] .char-card{max-width:520px;margin:0 auto 1rem}
+        div[data-testid="stTabs"] .char-portrait .char-wrap{width:96px!important;height:96px!important}
         </style>
         """,
     )
