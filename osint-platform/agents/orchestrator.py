@@ -291,6 +291,74 @@ def _format_tool_call(name, args):
     return f"{name}({compact_args[:110]})"
 
 
+# ORACLE context budget: the live 413 was caused by passing the FULL
+# findings of all four specialists to ORACLE with no cap. Each finding is
+# compressed section-aware to at most ORACLE_PER_AGENT_CHARS chars, so
+# the whole ORACLE context is at most ~8800 chars (~2200 tokens) before
+# the groq_client request budget trims it further. Full per-agent
+# outputs are already shown in their own report tabs, so the synthesis
+# does not need (and must not receive) the untruncated text.
+ORACLE_PER_AGENT_CHARS = 2200
+_SECTION_PRIORITY = (
+    "executive summary", "summary", "key findings", "findings",
+    "risk", "vulnerabilities", "recommendations", "recommended actions",
+    "evidence", "limitations",
+)
+
+
+def _compress_specialist_finding(text, cap=ORACLE_PER_AGENT_CHARS):
+    """Compress one specialist finding for ORACLE, section-aware.
+
+    Priority sections (summary / findings / risk / recommendations) are
+    kept even when they sit at the END of a long finding — a plain
+    head-truncation would lose exactly the risk assessment ORACLE needs.
+    Each kept section is capped so the total never exceeds ~cap chars.
+    Findings without headings fall back to a head excerpt.
+    """
+    import re
+
+    text = str(text or "").strip()
+    if len(text) <= cap:
+        return text
+    sections = []
+    current_heading, current_body = "Findings", []
+    for line in text.splitlines():
+        heading = re.match(r"^\s{0,3}#{1,4}\s+(.+?)\s*$", line)
+        bold = re.match(r"^\s*\*\*(.+?)\*\*\s*$", line)
+        if heading or bold:
+            sections.append((current_heading, "\n".join(current_body).strip()))
+            current_heading = (heading or bold).group(1).strip()
+            current_body = []
+        else:
+            current_body.append(line)
+    sections.append((current_heading, "\n".join(current_body).strip()))
+
+    def priority(heading):
+        lowered = heading.lower()
+        for i, keyword in enumerate(_SECTION_PRIORITY):
+            if keyword in lowered:
+                return i
+        return len(_SECTION_PRIORITY)
+
+    ordered = sorted(sections, key=lambda s: priority(s[0]))
+    kept, used = [], 0
+    per_section = max(300, cap // 3)
+    for heading, body in ordered:
+        if not body or used >= cap:
+            continue
+        chunk = body[:per_section].strip()
+        if not chunk:
+            continue
+        piece = f"### {heading}\n{chunk}"
+        if used + len(piece) > cap:
+            piece = piece[: cap - used]
+        kept.append(piece)
+        used += len(piece)
+    if not kept:
+        return text[:cap] + "\n\n[Finding truncated for ORACLE request-size budget.]"
+    return "\n\n".join(kept) + "\n\n[Compressed for ORACLE: full output is in this agent's report tab.]"
+
+
 def _render(slot, agent_key, status, activity_log, elapsed=None):
     slot.markdown(
         render_agent_workstation(agent_key, status, activity_log, elapsed),
@@ -433,13 +501,21 @@ def run_osint_audit(target, target_type):
 
         try:
             if task == "final_report":
+                # NEVER pass full specialist findings: that untruncated
+                # context + 4096 output tokens is what produced the live
+                # Groq 413 (Requested 9750 vs Limit 8000). Compressed
+                # evidence only; full outputs live in their own tabs.
                 context = "\n\n".join(
-                    f"### {AGENT_PROFILES[key]['name']} FINDINGS\n{value}"
+                    f"### {AGENT_PROFILES[key]['name']} FINDINGS (compressed)\n"
+                    f"{_compress_specialist_finding(value)}"
                     for key, value in results.items()
                 ) or "No specialist findings were returned. State this limitation; do not invent evidence."
                 user_prompt = (
                     f"Target: {target} ({target_type})\n\n"
-                    f"Specialist findings:\n\n{context}\n\n"
+                    "Specialist findings (COMPRESSED — the full per-agent outputs are already shown "
+                    "in their own report tabs; use only this evidence and do not invent details "
+                    "beyond it):\n\n"
+                    f"{context}\n\n"
                     "Write a concise executive OSINT report with these Markdown sections: Executive Summary; "
                     "Risk Score (0-100) with rationale; Key Findings with evidence/source attribution; "
                     "Vulnerabilities (severity-tagged, if evidence supports them); prioritized Recommendations; "

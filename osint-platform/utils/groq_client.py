@@ -21,7 +21,18 @@ Root cause (see tests/test_groq_parsing.py):
 
 Tool results are always plain strings, truncated to 6000 chars.
 Retries are bounded: at most 1 parsing retry per tool round, plus the
-existing round limit and the 2 final-synthesis attempts.
+existing round limit and 3 shrinking final-synthesis attempts.
+
+Request-size budget (the 413 fix): Groq rejected a live ORACLE synthesis
+with "Limit 8000, Requested 9750" TPM — the synthesis prompt (all four
+specialists' findings, untruncated) plus MAX_TOKENS=4096 of requested
+output exceeded the 8000-token on_demand limit. Every request is now
+estimated (chars/4, a deliberately conservative heuristic for English/
+Markdown — real tokenizers usually use MORE chars per token, so the
+estimate overstates tokens) and trimmed BEFORE sending so that
+prompt + requested output stays under GROQ_REQUEST_TOKEN_BUDGET (7000).
+A 413 / rate_limit_exceeded error is retried with a progressively
+smaller payload instead of falling straight back to a fallback report.
 """
 import ast
 import json
@@ -30,10 +41,18 @@ import re
 
 from groq import Groq
 
-from config.settings import GROQ_API_KEY, MAX_TOKENS, MODEL_NAME, TEMPERATURE
+from config.settings import (GROQ_API_KEY, GROQ_REQUEST_TOKEN_BUDGET,
+                             MAX_TOKENS, MODEL_NAME, SYNTHESIS_MAX_TOKENS,
+                             TEMPERATURE)
 
 _client = None
 MAX_TOOL_RESULT_CHARS = 6000
+REQUEST_TOKEN_BUDGET = int(GROQ_REQUEST_TOKEN_BUDGET or 7000)
+SYNTHESIS_MAX_TOKENS = int(SYNTHESIS_MAX_TOKENS or 2048)
+# Synthesis attempts: (max_tokens, prompt-budget divisor). Attempt 1 is
+# the full budget; each retry halves the prompt and lowers output, so a
+# 413 retry can never re-send the same oversized request.
+_SYNTHESIS_ATTEMPTS = ((SYNTHESIS_MAX_TOKENS, 1), (1536, 2), (1024, 4))
 _PARSE_RETRY_NUDGE = (
     "Your last reply could not be parsed. Reply again with EITHER one "
     "single valid JSON tool call OR plain text only. Do not include "
@@ -86,6 +105,111 @@ def _is_parse_error(exc):
     if "badrequest" in type(exc).__name__.lower():
         return True
     return "400" in text and ("pars" in text or "invalid_request" in text)
+
+
+def _is_size_error(exc):
+    """True for Groq 413 / TPM rate-limit errors (Request too large)."""
+    for attr in ("status_code", "status"):
+        if getattr(exc, attr, None) == 413:
+            return True
+    text = str(exc).lower()
+    return ("413" in text and ("large" in text or "token" in text or "rate_limit" in text)) \
+        or "request too large" in text or "rate_limit_exceeded" in text \
+        or "tokens per minute" in text or "tpm" in text
+
+
+def estimate_tokens(text):
+    """Conservative token estimate: 1 token per 4 chars, minimum 1."""
+    if text is None:
+        return 0
+    return max(1, (len(str(text)) + 3) // 4)
+
+
+def _message_tokens(message):
+    total = 10  # role / ids / structure overhead
+    content = message.get("content")
+    if isinstance(content, str):
+        total += estimate_tokens(content)
+    elif isinstance(content, list):
+        total += sum(estimate_tokens(str(p)) for p in content)
+    for call in message.get("tool_calls", []) or []:
+        function = call.get("function", {}) or {}
+        total += estimate_tokens(function.get("arguments", ""))
+        total += estimate_tokens(function.get("name", ""))
+    total += estimate_tokens(message.get("name", ""))
+    return total
+
+
+def _messages_tokens(messages):
+    return sum(_message_tokens(m) for m in (messages or []))
+
+
+def _truncate_middle(text, max_chars):
+    """Keep the head and tail of an over-long message, marking the cut."""
+    if len(text) <= max_chars or max_chars < 100:
+        return text[:max_chars]
+    marker = "\n\n[... content trimmed for request-size budget ...]\n\n"
+    head = int(max_chars * 0.7) - len(marker) // 2
+    tail = max_chars - len(marker) - head
+    return text[:head] + marker + text[len(text) - tail:]
+
+
+def _trim_messages_to_budget(messages, prompt_token_budget, tool_defs_tokens=0):
+    """Return a copy of messages whose estimated tokens fit the budget.
+
+    Order of trimming (least destructive first):
+      1. Drop the OLDEST assistant+tool blocks, keeping the most recent
+         evidence — tool messages are never kept without their assistant
+         call, so blocks are dropped whole.
+      2. Halve tool-result contents, repeatedly, down to 750 chars.
+      3. Middle-truncate the longest non-system message.
+    The system message is never dropped. If the budget is impossibly
+    small, the result is still the smallest safe shape (system + first
+    user, truncated), never an unbounded original.
+    """
+    import copy
+
+    budget = max(300, int(prompt_token_budget) - int(tool_defs_tokens or 0))
+    msgs = copy.deepcopy(list(messages or []))
+    if _messages_tokens(msgs) <= budget:
+        return msgs
+    # 1. Drop oldest blocks after system + first user. A block is an
+    # assistant message plus the tool messages that follow it.
+    while _messages_tokens(msgs) > budget and len(msgs) > 3:
+        # Find the first droppable block: index 2 onwards, unless the
+        # first messages are not system/user (then start at 1).
+        start = 2 if len(msgs) >= 2 and msgs[0].get("role") == "system" else 1
+        if start >= len(msgs):
+            break
+        end = start + 1
+        while end < len(msgs) and msgs[end].get("role") == "tool":
+            end += 1
+        # If the block starts with tool messages (no assistant), drop them.
+        if msgs[start].get("role") == "tool":
+            end = start + 1
+        del msgs[start:end]
+    # 2. Halve tool contents.
+    limit = MAX_TOOL_RESULT_CHARS
+    while _messages_tokens(msgs) > budget and limit > 750:
+        limit //= 2
+        for m in msgs:
+            if m.get("role") == "tool" and isinstance(m.get("content"), str):
+                m["content"] = m["content"][:limit]
+    # 3. Middle-truncate the longest non-system message, repeatedly.
+    while _messages_tokens(msgs) > budget:
+        candidates = [(i, len(str(m.get("content") or "")))
+                      for i, m in enumerate(msgs) if m.get("role") != "system"]
+        if not candidates:
+            break
+        idx, length = max(candidates, key=lambda t: t[1])
+        if length < 200:
+            break
+        content = str(msgs[idx].get("content") or "")
+        target_chars = max(100, length // 2)
+        msgs[idx]["content"] = _truncate_middle(content, target_chars)
+        if _messages_tokens(msgs) <= budget:
+            break
+    return msgs
 
 
 def _extract_json_object(text):
@@ -286,6 +410,10 @@ def _fallback_report(tool_results, reason, source_context=None):
     lines = [
         "# Preliminary findings — evidence fallback",
         "",
+        "**FALLBACK — NOT A REAL SYNTHESIS:** the language model did not produce a synthesis for "
+        "this run. What follows is evidence only, compiled from tool results / specialist findings. "
+        "Do not treat any risk score or summary below as a model-generated report.",
+        "",
         "The model did not produce a complete synthesis. The sections below preserve available "
         "evidence without adding unsupported interpretation. Verify source data before acting.",
         "",
@@ -348,11 +476,17 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
             break
         _emit(activity_callback, "thinking", round_num)
         parse_retried = False
+        size_retried = False
         message = None
+        tool_defs_tokens = estimate_tokens(json.dumps(clean_tools, ensure_ascii=False)) if clean_tools else 0
         while True:
+            prompt_budget = REQUEST_TOKEN_BUDGET - MAX_TOKENS
+            if size_retried:
+                prompt_budget //= 2
             kwargs = {
                 "model": MODEL_NAME,
-                "messages": _clean_messages(messages),
+                "messages": _trim_messages_to_budget(
+                    _clean_messages(messages), prompt_budget, tool_defs_tokens),
                 "temperature": 0.0 if parse_retried else TEMPERATURE,
                 "max_tokens": MAX_TOKENS,
             }
@@ -367,6 +501,11 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
                 message = choices[0].message
                 break
             except Exception as exc:
+                if _is_size_error(exc) and not size_retried:
+                    size_retried = True
+                    _emit(activity_callback, "error",
+                          f"Request too large in tool round {round_num} — retrying with compressed context.")
+                    continue
                 if _is_parse_error(exc) and not parse_retried:
                     parse_retried = True
                     _emit(activity_callback, "error",
@@ -446,30 +585,37 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
             })
 
     # Tool execution is finished. Ask for an explicit synthesis without exposing tools again.
-    for attempt in range(1, 3):
+    # Synthesis is where the live 413 happened: the base messages already
+    # contain the (compressed) specialist findings, so each attempt is
+    # budgeted — prompt + requested output under REQUEST_TOKEN_BUDGET —
+    # and each retry after a size error sends a SMALLER payload, never
+    # the same oversized request again.
+    for attempt, (synth_max_tokens, divisor) in enumerate(_SYNTHESIS_ATTEMPTS, start=1):
         if client is None:
             break
         _emit(activity_callback, "finalizing", {"attempt": attempt, "tool_count": len(tool_results)})
-        final_messages = _clean_messages(messages) + [{
-            "role": "user",
-            "content": (
-                "Tool execution is now closed. Do not request or call any tools. "
-                "Using only the evidence already present in this conversation, write the final "
-                "complete answer requested by the original user prompt. Distinguish verified "
-                "observations from uncertainty, cite the tool names and returned facts, and include "
-                "a short limitations section. Do not say that more rounds are needed."
-                if attempt == 1 else
-                "Your previous finalization attempt was empty, unusable, or could not be parsed. "
-                "Return a substantive, complete Markdown answer now, using only the evidence already "
-                "present. Do not request tools, invent facts, or return an empty response."
-            ),
-        }]
+        instruction = (
+            "Tool execution is now closed. Do not request or call any tools. "
+            "Using only the evidence already present in this conversation, write the final "
+            "complete answer requested by the original user prompt. Distinguish verified "
+            "observations from uncertainty, cite the tool names and returned facts, and include "
+            "a short limitations section. Do not say that more rounds are needed."
+            if attempt == 1 else
+            "Your previous finalization attempt was empty, unusable, could not be parsed, "
+            "or was too large. Return a substantive, complete Markdown answer now, using only "
+            "the compressed evidence already present. Do not request tools, invent facts, "
+            "or return an empty response."
+        )
+        prompt_budget = (REQUEST_TOKEN_BUDGET - synth_max_tokens) // divisor
+        base_messages = _trim_messages_to_budget(
+            _clean_messages(messages), prompt_budget - estimate_tokens(instruction))
+        final_messages = base_messages + [{"role": "user", "content": instruction}]
         try:
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=final_messages,
-                temperature=0.0 if attempt == 2 else TEMPERATURE,
-                max_tokens=MAX_TOKENS,
+                temperature=0.0 if attempt > 1 else TEMPERATURE,
+                max_tokens=synth_max_tokens,
             )
             choices = getattr(response, "choices", None) or []
             if not choices:
@@ -485,10 +631,12 @@ def run_agent_with_tools(system_prompt, user_prompt, tools, tool_executor,
             last_error = f"the model returned an empty synthesis on attempt {attempt}"
         except Exception as exc:
             last_error = f"final synthesis failed ({type(exc).__name__}: {exc})"
-            if _is_parse_error(exc) and attempt == 1:
+            if _is_size_error(exc):
+                _emit(activity_callback, "error",
+                      "Request too large during final synthesis — retrying with compressed context.")
+            elif _is_parse_error(exc) and attempt == 1:
                 _emit(activity_callback, "error",
                       "Parsing failed during final synthesis — retrying once with a clean continuation.")
-                # Attempt 2 (loop continues) is the simplified, low-temperature retry.
         _emit(activity_callback, "error", last_error)
 
     fallback = _fallback_report(tool_results, last_error, fallback_context)

@@ -4,6 +4,14 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 MODEL_NAME = "openai/gpt-oss-120b"
 MAX_TOKENS = 4096
 TEMPERATURE = 0.2
+# Request-size budget (see utils/groq_client.py): the user's live 413 was
+# "Limit 8000, Requested 9750" TPM for gpt-oss-120b on_demand. Target a
+# TOTAL (prompt + requested output) of 7000 estimated tokens, leaving
+# 1000 tokens of headroom under the 8000 limit for other agents in the
+# same minute. Synthesis output is capped lower than tool rounds because
+# the synthesis prompt (all specialists' findings) is the large part.
+GROQ_REQUEST_TOKEN_BUDGET = 7000
+SYNTHESIS_MAX_TOKENS = 2048
 
 SEVERITY_COLORS = {
     "CRITICAL": "#FF0040",
