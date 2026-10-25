@@ -61,7 +61,7 @@ class FakeCompletions:
 
 
 class GroqToolTranscriptTests(unittest.TestCase):
-    def test_tool_exhaustion_sends_named_result_and_preserves_assistant_metadata(self):
+    def test_tool_exhaustion_sends_named_result_and_clean_assistant_message(self):
         first = response(FakeMessage(
             tool_calls=[tool_call()],
             reasoning="Use DNS evidence to answer.",
@@ -89,7 +89,10 @@ class GroqToolTranscriptTests(unittest.TestCase):
         transcript = final_request["messages"]
         assistant_message = next(message for message in transcript if message.get("role") == "assistant")
         tool_message = next(message for message in transcript if message.get("role") == "tool")
-        self.assertEqual(assistant_message.get("reasoning"), "Use DNS evidence to answer.")
+        # Regression: provider reasoning/metadata must NOT be echoed back —
+        # that is what Groq rejected on the next round (400 parsing failure).
+        self.assertNotIn("reasoning", assistant_message)
+        self.assertEqual(set(assistant_message.keys()), {"role", "content", "tool_calls"})
         self.assertEqual(tool_message.get("name"), "dns_lookup")
         self.assertEqual(tool_message.get("tool_call_id"), "call-123")
         self.assertIn("203.0.113.8", tool_message.get("content", ""))
