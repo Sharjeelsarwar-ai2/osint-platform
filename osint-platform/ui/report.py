@@ -52,6 +52,14 @@ def _is_legacy_round_limit(content):
     return (content or "").strip().lower().strip("_*() ") == "max rounds reached without final answer"
 
 
+def is_fallback_content(content):
+    """True when an agent output is the evidence-only fallback, NOT a
+    real model synthesis. This must never be presented as a real report
+    or a real risk score (the live 413 confusion: ORACLE showed a
+    'response' that was only this fallback, next to its diagnostic)."""
+    return str(content or "").startswith("# Preliminary findings — evidence fallback")
+
+
 def _plain_snippet(content, limit=180):
     """First prose snippet of an agent output, markdown stripped, for Overview."""
     text = re.sub(r"[#>*`_]", "", content or "")
@@ -89,6 +97,7 @@ def agent_tab_data(results, activity, profiles):
             "tools": tools,
             "content": content,
             "snippet": _plain_snippet(content),
+            "is_fallback": is_fallback_content(content),
         })
     return rows
 
@@ -121,11 +130,14 @@ def render_report(report, profiles, model_name):
     target_type = report["target_type"]
     elapsed = report["elapsed"]
     oracle_text = str(results.get("oracle", ""))
-    score = None if _is_legacy_round_limit(oracle_text) else extract_risk_score(oracle_text)
+    oracle_is_fallback = is_fallback_content(oracle_text)
+    # A fallback's numbers are evidence text, not a synthesis — never
+    # present them as the report's risk score.
+    score = None if (_is_legacy_round_limit(oracle_text) or oracle_is_fallback) else extract_risk_score(oracle_text)
     activity = st.session_state.get("nexus_latest_activity", {})
     rows = agent_tab_data(results, activity, profiles)
     completed = sum(1 for r in rows if r["content"] and not r["content"].startswith("# Agent execution failed")
-                    and not _is_legacy_round_limit(r["content"]))
+                    and not _is_legacy_round_limit(r["content"]) and not r["is_fallback"])
     st.markdown(
         '<div class="section-heading"><div><span class="section-kicker">REPORT</span>'
         '<h2>Intelligence report</h2></div><span>One dedicated tab per specialist · tools shown by name</span></div>',
@@ -144,7 +156,12 @@ def render_report(report, profiles, model_name):
         unsafe_allow_html=True,
     )
     level, color = risk_level(score)
-    if score is None:
+    if oracle_is_fallback:
+        risk_value = "—"
+        level = "No real synthesis"
+        risk_detail = ("FALLBACK ONLY — no model synthesis was produced for this run "
+                       "(see the ORACLE tab diagnostic). Full specialist findings are in their own tabs.")
+    elif score is None:
         risk_value = "—"
         risk_detail = "No verified numeric synthesis was available. Review the full findings below."
     else:
@@ -164,7 +181,11 @@ def render_report(report, profiles, model_name):
         st.markdown("### Overview — executive summary")
         st.markdown("**Risk:** " + risk_value + "/100 · " + level + " — " + risk_detail)
         oracle_row = next((r for r in rows if r["key"] == "oracle"), None)
-        if oracle_row and oracle_row["content"]:
+        if oracle_row and oracle_row.get("is_fallback"):
+            st.warning("⚠ FALLBACK — NOT A REAL SYNTHESIS: model synthesis was unavailable for this run. "
+                       "The ORACLE tab below contains evidence only, not a validated report, and no risk "
+                       "score is shown for it. Review the specialist tabs for the real findings.")
+        elif oracle_row and oracle_row["content"]:
             excerpt = oracle_row["content"][:900]
             st.markdown(excerpt + ("\n\n*Full ORACLE output is in the ORACLE tab.*"
                                    if len(oracle_row["content"]) > 900 else ""))
@@ -181,14 +202,16 @@ def render_report(report, profiles, model_name):
             content = row["content"]
             if not content:
                 st.warning("This session contains a legacy incomplete response. Run a fresh scan to replace it.")
-            elif content.startswith("# Preliminary findings — evidence fallback"):
-                st.warning("Model synthesis was unavailable. The content below is a preliminary evidence compilation, not a validated risk assessment.")
+            elif row.get("is_fallback"):
+                st.warning("⚠ FALLBACK — NOT A REAL SYNTHESIS: model synthesis was unavailable, so the content "
+                           "below is an evidence-only compilation, not a validated risk assessment and not a "
+                           "model-generated report. Do not quote a risk score or executive summary from it.")
                 diagnostic = re.search(
                     r"Final language-model synthesis was unavailable:\s*([^\r\n]+)",
                     content,
                 )
                 if diagnostic:
-                    st.caption("SYNTHESIS DIAGNOSTIC · " + diagnostic.group(1)[:320])
+                    st.caption("SYNTHESIS DIAGNOSTIC · FALLBACK — NOT A REAL SYNTHESIS · " + diagnostic.group(1)[:320])
                 st.markdown(content)
             elif content.startswith("# Agent execution failed"):
                 st.error(content)
